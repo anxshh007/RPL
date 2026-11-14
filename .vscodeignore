@@ -1,0 +1,10 @@
+.vscode/**
+.github/**
+docs/**
+src/**
+tests/**
+out/tests/**
+**/*.map
+**/*.ts
+tsconfig.json
+AGENTS.md
