@@ -11,6 +11,8 @@
  *    warnings instead of being dropped silently;
  *  - output order never depends on input order.
  *
+ * It also provides a small cache of built graphs (see GraphCache).
+ *
  * Pure logic: no file access, no network, no mutation of the input.
  */
 import type { DependencyEdge, Evidence, UnresolvedImport } from '../shared/contracts';
@@ -20,7 +22,22 @@ export const MAX_DETAILED_WARNINGS = 10;
 
 // ───────────────────────────── Paths ─────────────────────────────
 
-export type PathRejectionReason = 'not_a_string' | 'empty' | 'absolute' | 'parent_segment';
+export type PathRejectionReason =
+  | 'not_a_string'
+  | 'empty'
+  | 'absolute'
+  | 'parent_segment'
+  | 'restricted';
+
+/** Folders and files no module may touch (AGENTS.md, path safety). Compared in lower case. */
+const RESTRICTED_SEGMENTS: ReadonlySet<string> = new Set(['.git', 'node_modules', '.env']);
+
+/** True for anything inside .git or node_modules, and for .env and .env.* files. */
+function isRestricted(segments: readonly string[]): boolean {
+  const lower = segments.map((segment) => segment.toLowerCase());
+  const basename = lower[lower.length - 1] ?? '';
+  return lower.some((segment) => RESTRICTED_SEGMENTS.has(segment)) || basename.startsWith('.env.');
+}
 
 export type PathResult =
   | { ok: true; path: string }
@@ -34,7 +51,10 @@ export type PathResult =
  * Case is preserved.
  *
  * Rejected: non-strings, empty paths, absolute paths (a leading slash, a UNC
- * prefix or a drive letter) and any path with a ".." segment.
+ * prefix or a drive letter), any path with a ".." segment, anything inside
+ * .git or node_modules, and .env files.
+ *
+ * Symlink escapes cannot be checked here: this module never touches the disk.
  */
 export function normalisePath(raw: unknown): PathResult {
   if (typeof raw !== 'string') {
@@ -54,6 +74,9 @@ export function normalisePath(raw: unknown): PathResult {
   if (segments.length === 0) {
     return { ok: false, reason: 'empty' };
   }
+  if (isRestricted(segments)) {
+    return { ok: false, reason: 'restricted' };
+  }
   return { ok: true, path: segments.join('/') };
 }
 
@@ -68,6 +91,8 @@ export function describeRejection(reason: PathRejectionReason): string {
       return 'absolute paths are not allowed';
     case 'parent_segment':
       return 'paths containing ".." are not allowed';
+    case 'restricted':
+      return 'paths in .git or node_modules, and .env files, are not allowed';
   }
 }
 
@@ -98,6 +123,11 @@ export interface DependencyGraph {
   readonly rejectedPaths: readonly RejectedPath[];
   /** Plain-English warnings in a fixed order. */
   readonly warnings: readonly string[];
+  /**
+   * True when part of the input was ignored: a missing list, a malformed
+   * entry or a rejected path. Edges from a file to itself do not count.
+   */
+  readonly droppedInput: boolean;
 }
 
 /** The part of RepositoryContext the graph is built from. */
@@ -372,6 +402,11 @@ export function buildDependencyGraph(source: GraphSource | null | undefined): De
     unresolvedImports,
     rejectedPaths,
     warnings: buildWarnings(state, rejectedPaths, unresolvedImports),
+    droppedInput:
+      state.structural.length > 0 ||
+      rejectedPaths.length > 0 ||
+      state.malformedEdges > 0 ||
+      state.malformedUnresolved > 0,
   };
 }
 
@@ -385,4 +420,149 @@ export function dependantEdgesOf(graph: DependencyGraph, path: string): readonly
 /** Edges to the files that `path` depends on directly. Empty for an unknown file. */
 export function dependencyEdgesOf(graph: DependencyGraph, path: string): readonly DependencyEdge[] {
   return graph.forward.get(path) ?? NO_EDGES;
+}
+
+// ───────────────────────────── Cache ─────────────────────────────
+
+/** A cache keeps at most this many graphs unless told otherwise. */
+export const DEFAULT_GRAPH_CACHE_SIZE = 8;
+
+/**
+ * Remembers recently built graphs so that repeated calls with the same edges
+ * do not rebuild them. The agent calls ImpactLens twice per request with the
+ * same context (before planning, and again with the proposed files), so the
+ * second call is a hit.
+ *
+ * The key is the content of the context's edge set, not the identity of the
+ * object:
+ *  - the same edges and unresolved imports in any order are a hit;
+ *  - any difference in an edge, its kind or its evidence is a miss.
+ * Because the key is the content, a stale graph can never be returned.
+ * `invalidate` is therefore not needed for correctness. It exists to release
+ * the graphs of files known to have changed.
+ *
+ * Limits: the key is a string about as large as the edge list, and the least
+ * recently used graph is dropped when the cache is full. A context with a
+ * missing list is built every time and never stored.
+ */
+export interface GraphCache {
+  /** The graph for this source: from the cache, or built and remembered. */
+  get(source: GraphSource | null | undefined): DependencyGraph;
+  /**
+   * Drops every cached graph that contains one of these files and returns how
+   * many were dropped. Paths are normalised first; bad paths are ignored.
+   * With no argument, drops everything.
+   */
+  invalidate(paths?: readonly string[]): number;
+  /** Number of graphs currently held. */
+  readonly size: number;
+  /** Lookups since creation. A miss is a build. */
+  stats(): { hits: number; misses: number };
+}
+
+/** A string field as itself; anything else as the label used in warnings. */
+function keyField(value: unknown): unknown {
+  return typeof value === 'string' ? value : [displayPath(value)];
+}
+
+function sortedKeyLines(entries: readonly unknown[], fields: readonly string[]): string {
+  return entries
+    .map((entry) =>
+      isRecord(entry) ? JSON.stringify(fields.map((field) => keyField(entry[field]))) : '0',
+    )
+    .sort(compareStrings)
+    .join('\n');
+}
+
+/**
+ * The cache key for a source: one line per edge and per unresolved import,
+ * sorted so that input order does not matter. Returns undefined when a list is
+ * missing; such a source is not cached.
+ */
+export function graphCacheKey(source: GraphSource | null | undefined): string | undefined {
+  if (!isRecord(source)) {
+    return undefined;
+  }
+  const { dependencyEdges, unresolvedImports } = source;
+  if (!Array.isArray(dependencyEdges) || !Array.isArray(unresolvedImports)) {
+    return undefined;
+  }
+  return [
+    sortedKeyLines(dependencyEdges, ['from', 'to', 'kind', 'evidence']),
+    sortedKeyLines(unresolvedImports, ['file', 'module']),
+  ].join('\n#\n');
+}
+
+interface CacheEntry {
+  readonly graph: DependencyGraph;
+  /** Every file the graph knows about, for invalidate. */
+  readonly files: ReadonlySet<string>;
+}
+
+export function createGraphCache(maxEntries: number = DEFAULT_GRAPH_CACHE_SIZE): GraphCache {
+  const limit = Number.isInteger(maxEntries) && maxEntries >= 1 ? maxEntries : DEFAULT_GRAPH_CACHE_SIZE;
+  // A Map keeps insertion order, so the first key is the least recently used.
+  const entries = new Map<string, CacheEntry>();
+  let hits = 0;
+  let misses = 0;
+
+  function remember(key: string, graph: DependencyGraph): void {
+    const files = new Set([...graph.files, ...graph.unresolvedImports.map((item) => item.file)]);
+    entries.set(key, { graph, files });
+    const oldest = entries.keys().next();
+    if (entries.size > limit && oldest.done !== true) {
+      entries.delete(oldest.value);
+    }
+  }
+
+  return {
+    get(source: GraphSource | null | undefined): DependencyGraph {
+      const key = graphCacheKey(source);
+      const cached = key === undefined ? undefined : entries.get(key);
+      if (key !== undefined && cached !== undefined) {
+        hits += 1;
+        // Move to the end: most recently used.
+        entries.delete(key);
+        entries.set(key, cached);
+        return cached.graph;
+      }
+      misses += 1;
+      const graph = buildDependencyGraph(source);
+      if (key !== undefined) {
+        remember(key, graph);
+      }
+      return graph;
+    },
+
+    invalidate(paths?: readonly string[]): number {
+      if (paths === undefined) {
+        const dropped = entries.size;
+        entries.clear();
+        return dropped;
+      }
+      const targets = new Set<string>();
+      for (const path of Array.isArray(paths) ? paths : []) {
+        const result = normalisePath(path);
+        if (result.ok) {
+          targets.add(result.path);
+        }
+      }
+      let dropped = 0;
+      for (const [key, entry] of [...entries]) {
+        if ([...targets].some((target) => entry.files.has(target))) {
+          entries.delete(key);
+          dropped += 1;
+        }
+      }
+      return dropped;
+    },
+
+    get size(): number {
+      return entries.size;
+    },
+
+    stats(): { hits: number; misses: number } {
+      return { hits, misses };
+    },
+  };
 }

@@ -33,6 +33,8 @@ export interface ChangedTargets {
   readonly source: ChangedTargetSource;
   /** Rejected paths, and a note when there is nothing to analyse. Sorted. */
   readonly warnings: readonly string[];
+  /** How many distinct paths were rejected. */
+  readonly rejectedCount: number;
 }
 
 function requestCandidates(request: ChangeRequest | null | undefined): unknown[] {
@@ -96,7 +98,12 @@ export function resolveChangedTargets(
   } else if (candidates.length > 0) {
     source = 'request';
   }
-  return { targets: [...targets].sort(compareStrings), source, warnings };
+  return {
+    targets: [...targets].sort(compareStrings),
+    source,
+    warnings,
+    rejectedCount: rejections.size,
+  };
 }
 
 // ───────────────────────── Direct dependants ─────────────────────────
