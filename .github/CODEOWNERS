@@ -1,26 +1,25 @@
-# Replace the placeholders with real GitHub usernames.
 # Changes to shared contracts need the Lead + every module owner.
 
 *                       @anxshh007
-/src/shared/            @anxshh007 @member1-username @member2-username @member3-username @member4-username @member5-username
+/src/shared/            @anxshh007 @member1-AsthaSingh29 @member2-adityashukla15 @member3-anxshh007 @member4-tusharmondal912335-byte @member5-supriyo251017002050-dotcom
 /AGENTS.md              @anxshh007
 /docs/DECISIONS.md      @anxshh007
-/package.json           @anxshh007 @member1-username
+/package.json           @anxshh007 @member1-AsthaSingh29
 
-/src/agent/             @member1-username
-/src/mcp/               @member1-username
-/src/edits/             @member1-username
-/tests/unit/agent/      @member1-username
+/src/agent/             @member1-AsthaSingh29
+/src/mcp/               @member1-AsthaSingh29
+/src/edits/             @member1-AsthaSingh29
+/tests/unit/agent/      @member1-AsthaSingh29
 
-/src/repository/        @member2-username
-/tests/unit/repository/ @member2-username
+/src/repository/        @member2-adityashukla15
+/tests/unit/repository/ @member2-adityashukla15
 
-/src/impact/            @member3-username
-/tests/unit/impact/     @member3-username
+/src/impact/            @member3-anxshh007
+/tests/unit/impact/     @member3-anxshh007
 
-/src/verification/      @member4-username
-/tests/unit/verification/ @member4-username
+/src/verification/      @member4-tusharmondal912335-byte
+/tests/unit/verification/ @member4-tusharmondal912335-byte
 
-/src/extension/         @member5-username
-/src/webview/           @member5-username
-/tests/integration/     @member5-username @member1-username
+/src/extension/         @member5-supriyo251017002050-dotcom
+/src/webview/           @member5-supriyo251017002050-dotcom
+/tests/integration/     @member5-supriyo251017002050-dotcom @member1-AsthaSingh29
