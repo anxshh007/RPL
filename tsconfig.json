@@ -1,17 +1,17 @@
 {
   "compilerOptions": {
-    "module": "commonjs",
     "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
     "lib": ["ES2022"],
-    "types": ["node", "vscode"],
-    "outDir": "out",
-    "rootDir": ".",
-    "sourceMap": true,
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "rootDir": "./src"
   },
-  "include": ["src", "tests"],
-  "exclude": ["src/webview", "node_modules", "out"]
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "tests/fixtures"]
 }

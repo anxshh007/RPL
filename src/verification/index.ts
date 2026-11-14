@@ -1,33 +1,36 @@
-// OWNER: Member 4 — TestSheriff (brief: docs/briefs/04_member4_testsheriff.md)
-// STUB: never claims a run. Replace with discovery, selection, safe-process, pytest adapter, parser.
-import type { TestCandidate, TestRunRequest, VerificationReport, VerificationService } from '../shared/contracts';
+/**
+ * RepoPilot AI — Layer 3: TestSheriff
+ * Public Module Exports
+ */
 
-export function notRunReport(requestId: string, reason: string): VerificationReport {
-  return {
-    requestId,
-    status: 'not_run',
-    runner: 'none',
-    commandLabel: '',
-    selectedTests: [],
-    counts: { total: null, passed: null, failed: null, skipped: null, errors: null },
-    parsingComplete: false,
-    exitCode: null,
-    durationMs: null,
-    failures: [],
-    stdoutTail: '',
-    stderrTail: '',
-    outputTruncated: false,
-    limitations: [reason],
-  };
-}
+// Canonical contracts
+export * from "../shared/types/verification.ts";
+export * from "../shared/types/impact.ts";
+export * from "../shared/types/mcp.ts";
 
-export function createVerificationService(): VerificationService {
-  return {
-    async discoverTests(_changedFiles: string[], candidates: TestCandidate[]): Promise<TestCandidate[]> {
-      return candidates;
-    },
-    async verify(request: TestRunRequest): Promise<VerificationReport> {
-      return notRunReport(request.requestId, 'TestSheriff is a stub: no tests were executed.');
-    },
-  };
-}
+// Security & utilities
+export * from "../shared/utils/path-validator.ts";
+export * from "../shared/utils/redactor.ts";
+export * from "../shared/utils/logger.ts";
+
+// Verification components
+export * from "./errors.ts";
+export * from "./process/process-types.ts";
+export * from "./process/safe-process.ts";
+export * from "./runner/runner-types.ts";
+export * from "./runner/pytest-runner.ts";
+export * from "./test-discovery.ts";
+export * from "./test-selection.ts";
+export * from "./result-parser.ts";
+export * from "./verification-service.ts";
+
+// MCP tools & server
+export * from "./mcp/test-tools.ts";
+export * from "./mcp/mcp-server.ts";
+
+// UI adapter & widget
+export * from "../ui/ui-state-adapter.ts";
+export * from "../ui/widget-generator.ts";
+
+// Orchestrator & human-in-the-loop workflow
+export * from "../agent/orchestrator-integration.ts";

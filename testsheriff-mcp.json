@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "repopilot-testsheriff": {
+      "command": "C:\\TEST_SHERIFF\\bin\\node.cmd",
+      "args": [
+        "--no-warnings",
+        "--experimental-transform-types",
+        "C:\\TEST_SHERIFF\\src\\verification\\mcp\\mcp-server.ts"
+      ],
+      "env": {
+        "ELECTRON_RUN_AS_NODE": "1"
+      }
+    }
+  }
+}

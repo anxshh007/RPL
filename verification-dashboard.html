@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>RepoPilot Verification Dashboard</title>
+  <style>
+    :root {
+      --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      --bg: #F9FAFB;
+      --card-bg: #FFFFFF;
+      --text: #1F2937;
+      --text-muted: #6B7280;
+      --border: #E5E7EB;
+      --success: #10B981;
+      --danger: #EF4444;
+      --warning: #F59E0B;
+      --info: #3B82F6;
+    }
+    body {
+      font-family: var(--font-family);
+      margin: 0;
+      padding: 20px;
+      background: var(--bg);
+      color: var(--text);
+    }
+    .dashboard-container {
+      max-width: 960px;
+      margin: 0 auto;
+      background: var(--card-bg);
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+      overflow: hidden;
+    }
+    .header-banner {
+      background: #ECFDF5;
+      border-bottom: 2px solid #10B981;
+      color: #065F46;
+      padding: 20px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .headline-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin: 0;
+    }
+    .request-id {
+      font-size: 0.85rem;
+      opacity: 0.8;
+      margin-top: 4px;
+    }
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      border-bottom: 1px solid var(--border);
+    }
+    .metric-card {
+      padding: 16px;
+      text-align: center;
+      border-right: 1px solid var(--border);
+    }
+    .metric-card:last-child {
+      border-right: none;
+    }
+    .metric-value {
+      font-size: 1.5rem;
+      font-weight: 700;
+    }
+    .metric-label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+    .section {
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--border);
+    }
+    .section:last-child {
+      border-bottom: none;
+    }
+    .section-title {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .command-tag {
+      background: #1E293B;
+      color: #E2E8F0;
+      font-family: monospace;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      word-break: break-all;
+    }
+    .failure-card {
+      background: #FEF2F2;
+      border: 1px solid #FCA5A5;
+      border-radius: 8px;
+      padding: 14px;
+      margin-bottom: 12px;
+    }
+    .failure-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .failure-badge {
+      background: var(--danger);
+      color: white;
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .failure-test-name {
+      font-weight: 600;
+      color: #991B1B;
+    }
+    .failure-file {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+    .failure-message {
+      font-family: monospace;
+      font-size: 0.85rem;
+      background: rgba(255,255,255,0.7);
+      padding: 8px;
+      border-radius: 4px;
+      color: #7F1D1D;
+    }
+    .hypothesis-box {
+      margin-top: 10px;
+      background: #EFF6FF;
+      border-left: 3px solid var(--info);
+      padding: 8px 12px;
+      font-size: 0.85rem;
+      color: #1E3A8A;
+      border-radius: 0 4px 4px 0;
+    }
+    .traceback-details {
+      margin-top: 10px;
+      font-size: 0.8rem;
+    }
+    .traceback-content {
+      background: #111827;
+      color: #F9FAFB;
+      padding: 12px;
+      border-radius: 6px;
+      overflow-x: auto;
+      font-size: 0.75rem;
+      margin-top: 6px;
+    }
+    .limitations-box {
+      background: #FFFBEB;
+      border: 1px solid #FDE68A;
+      border-radius: 8px;
+      padding: 12px 16px;
+      color: #92400E;
+      font-size: 0.85rem;
+    }
+    .limitations-box ul {
+      margin: 6px 0 0 18px;
+      padding: 0;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+    th, td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    th {
+      background: #F8FAFC;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+    .pill {
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 9999px;
+      text-transform: uppercase;
+    }
+    .pill-passed { background: #D1FAE5; color: #065F46; }
+    .pill-failed { background: #FEE2E2; color: #991B1B; }
+    .pill-skipped { background: #FEF3C7; color: #92400E; }
+    .pill-error { background: #FEE2E2; color: #991B1B; }
+  </style>
+</head>
+<body>
+  <div class="dashboard-container">
+    <div class="header-banner">
+      <div>
+        <h1 class="headline-title">Verification Passed (2/2 tests passed)</h1>
+        <div class="request-id">Request ID: req-demo-pass-001 | Runner: pytest</div>
+      </div>
+      <div>
+        <span class="pill pill-passed" style="font-size: 0.9rem; padding: 6px 14px;">
+          PASSED
+        </span>
+      </div>
+    </div>
+
+    <div class="metric-grid">
+      <div class="metric-card">
+        <div class="metric-value">2</div>
+        <div class="metric-label">Total Tests</div>
+      </div>
+      <div class="metric-card" style="color: var(--success);">
+        <div class="metric-value">2</div>
+        <div class="metric-label">Passed</div>
+      </div>
+      <div class="metric-card" style="color: var(--danger);">
+        <div class="metric-value">0</div>
+        <div class="metric-label">Failed</div>
+      </div>
+      <div class="metric-card" style="color: var(--warning);">
+        <div class="metric-value">0</div>
+        <div class="metric-label">Skipped</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value">0.04s</div>
+        <div class="metric-label">Duration</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Executed Test Command</div>
+      <div class="command-tag">python -m pytest tests/test_cli.py -q</div>
+    </div>
+
+    
+
+    
+    <div class="section">
+      <div class="section-title">Test Cases Breakdown</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>Test</th>
+            <th>File</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          
+      <tr class="test-row status-passed">
+        <td class="status-indicator"><span class="pill pill-passed">PASSED</span></td>
+        <td class="test-name">test_cli.py</td>
+        <td class="test-file">tests/test_cli.py</td>
+        <td class="test-message">Passed without assertion errors</td>
+      </tr>
+    
+        </tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Verification Limitations & Boundaries</div>
+      <div class="limitations-box">
+        <div><strong>Disclosed Verification Boundaries:</strong></div>
+        <ul><li>Targeted subset of tests executed. Broader repository test suite was not run; untested edge cases may exist.</li></ul>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

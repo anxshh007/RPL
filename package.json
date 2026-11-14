@@ -1,64 +1,31 @@
 {
-  "name": "repopilot-ai",
-  "displayName": "RepoPilot AI",
-  "description": "Impact-aware coding agent for VS Code with hunk-level human approval and automated test verification.",
-  "version": "0.0.1",
-  "publisher": "your-team-id",
-  "private": true,
-  "license": "MIT",
-  "engines": {
-    "vscode": "^1.90.0"
-  },
-  "categories": ["AI", "Programming Languages"],
-  "activationEvents": ["onStartupFinished"],
-  "main": "./out/src/extension/extension.js",
-  "contributes": {
-    "commands": [
-      { "command": "repopilot.open", "title": "RepoPilot: Open Panel" },
-      { "command": "repopilot.inlineEdit", "title": "RepoPilot: Edit Selection" }
-    ],
-    "keybindings": [
-      {
-        "command": "repopilot.inlineEdit",
-        "key": "ctrl+shift+alt+e",
-        "mac": "cmd+shift+alt+e",
-        "when": "editorHasSelection"
-      }
-    ],
-    "configuration": {
-      "title": "RepoPilot AI",
-      "properties": {
-        "repopilot.trueforge.baseUrl": {
-          "type": "string",
-          "default": "",
-          "description": "TrueForge server URL. Member 1 sets the documented default after verifying it in the TrueForge docs."
-        },
-        "repopilot.context.tokenBudget": {
-          "type": "number",
-          "default": 16000,
-          "description": "Approximate context budget (estimated tokens, not exact)."
-        },
-        "repopilot.tests.timeoutMs": {
-          "type": "number",
-          "default": 120000,
-          "description": "Maximum time for one TestSheriff run."
-        },
-        "repopilot.tests.requireApproval": {
-          "type": "boolean",
-          "default": true,
-          "description": "Ask before TestSheriff runs tests."
-        }
-      }
-    }
+  "name": "repopilot-testsheriff",
+  "version": "1.0.0",
+  "description": "RepoPilot AI Layer 3 — Automated Test Discovery, Safe Execution & Verification Module",
+  "type": "module",
+  "main": "src/verification/index.ts",
+  "types": "src/verification/index.ts",
+  "bin": {
+    "testsheriff": "bin/testsheriff.cmd"
   },
   "scripts": {
-    "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./",
-    "test": "node --test out/tests/unit/shared/contracts.test.js out/tests/unit/agent/controller.test.js"
+    "test": "node scripts/test-runner.js",
+    "test:unit": "node scripts/test-runner.js unit",
+    "test:integration": "node scripts/test-runner.js integration",
+    "demo": "node scripts/demo.js",
+    "benchmark": "node scripts/run-flask-challenge.js",
+    "mcp:server": "node src/verification/mcp/mcp-server.ts",
+    "mcp:client": "node scripts/mcp-client.js"
   },
-  "devDependencies": {
-    "@types/node": "^20.11.0",
-    "@types/vscode": "^1.90.0",
-    "typescript": "^5.4.0"
-  }
+  "keywords": [
+    "repopilot",
+    "testsheriff",
+    "testing",
+    "mcp",
+    "verification",
+    "pytest",
+    "safety"
+  ],
+  "author": "RepoPilot AI Team (Member 4)",
+  "license": "Apache-2.0"
 }
