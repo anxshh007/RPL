@@ -7,15 +7,15 @@ An impact-aware coding agent for VS Code: it plans changes with one central True
 ## Layout
 
 ```
-src/shared/contracts/   shared types, events, service interfaces, webview protocol   (Lead)
-src/agent/              orchestrator + composition root createRepoPilot()          (Member 1)
-src/mcp/                MCP tool registration, canonical tool names                 (Member 1)
-src/edits/              propose / hunk apply / undo — only writer of workspace files (Member 1)
-src/repository/         scan, search, symbols, imports, context ranking & budget   (Member 2)
-src/impact/             ImpactLens dependency graph & explainable risk            (Member 3)
-src/verification/       TestSheriff discovery, safe pytest runs, parsing          (Member 4)
-src/extension/          VS Code activation, commands, webview bridge               (Member 5)
-src/webview/            React + Vite panel (added by Member 5)                    (Member 5)
+src/shared/contracts/   shared types, events, service interfaces, webview protocol   (Angshuman)
+src/agent/              orchestrator + composition root createRepoPilot()          (Astha)
+src/mcp/                MCP tool registration, canonical tool names                 (Astha)
+src/edits/              propose / hunk apply / undo — only writer of workspace files (Astha)
+src/repository/         scan, search, symbols, imports, context ranking & budget   (Aditya)
+src/impact/             ImpactLens dependency graph & explainable risk            (Angshuman)
+src/verification/       TestSheriff discovery, safe pytest runs, parsing          (Tushar)
+src/extension/          VS Code activation, commands, webview bridge               (Supryio)
+src/webview/            React + Vite panel (added by Member 5)                    (Supryio)
 tests/unit/<module>/    unit tests per owner
 docs/briefs/            the five member briefs
 docs/DECISIONS.md       resolved conflicts between the briefs — read before coding
