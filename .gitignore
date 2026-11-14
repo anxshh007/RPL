@@ -1,5 +1,12 @@
 node_modules/
+dist/
 out/
 *.vsix
-.vscode-test/
 .DS_Store
+*.log
+.env
+.env.local
+coverage/
+.vscode-test/
+member-1-core-repopilot/
+member-1-core-repopilot.zip

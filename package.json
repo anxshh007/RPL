@@ -1,64 +1,38 @@
 {
   "name": "repopilot-ai",
   "displayName": "RepoPilot AI",
-  "description": "Impact-aware coding agent for VS Code with hunk-level human approval and automated test verification.",
-  "version": "0.0.1",
-  "publisher": "your-team-id",
-  "private": true,
-  "license": "MIT",
+  "description": "An Impact-Aware Autonomous Coding Agent with Automated Verification",
+  "version": "0.1.0",
+  "type": "module",
   "engines": {
-    "vscode": "^1.90.0"
+    "vscode": "^1.85.0"
   },
-  "categories": ["AI", "Programming Languages"],
-  "activationEvents": ["onStartupFinished"],
-  "main": "./out/src/extension/extension.js",
-  "contributes": {
-    "commands": [
-      { "command": "repopilot.open", "title": "RepoPilot: Open Panel" },
-      { "command": "repopilot.inlineEdit", "title": "RepoPilot: Edit Selection" }
-    ],
-    "keybindings": [
-      {
-        "command": "repopilot.inlineEdit",
-        "key": "ctrl+shift+alt+e",
-        "mac": "cmd+shift+alt+e",
-        "when": "editorHasSelection"
-      }
-    ],
-    "configuration": {
-      "title": "RepoPilot AI",
-      "properties": {
-        "repopilot.trueforge.baseUrl": {
-          "type": "string",
-          "default": "",
-          "description": "TrueForge server URL. Member 1 sets the documented default after verifying it in the TrueForge docs."
-        },
-        "repopilot.context.tokenBudget": {
-          "type": "number",
-          "default": 16000,
-          "description": "Approximate context budget (estimated tokens, not exact)."
-        },
-        "repopilot.tests.timeoutMs": {
-          "type": "number",
-          "default": 120000,
-          "description": "Maximum time for one TestSheriff run."
-        },
-        "repopilot.tests.requireApproval": {
-          "type": "boolean",
-          "default": true,
-          "description": "Ask before TestSheriff runs tests."
-        }
-      }
-    }
-  },
+  "categories": [
+    "Programming Languages",
+    "Machine Learning",
+    "Testing"
+  ],
+  "main": "./dist/extension.js",
   "scripts": {
-    "compile": "tsc -p ./",
+    "build": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "test": "node --test out/tests/unit/shared/contracts.test.js out/tests/unit/agent/controller.test.js"
+    "typecheck": "tsc --noEmit -p ./",
+    "test": "npm run build && node --test dist/tests/unit/**/*.test.js dist/tests/integration/**/*.test.js",
+    "test:unit": "npm run build && node --test dist/tests/unit/**/*.test.js",
+    "test:integration": "npm run build && node --test dist/tests/integration/**/*.test.js",
+    "test:watch": "tsc -watch -p ./ & node --test --watch dist/tests/**/*.test.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.6.0",
+    "@truefoundry/trueforge-sdk": "^0.185.0",
+    "diff": "^7.0.0",
+    "zod": "^3.24.1"
   },
   "devDependencies": {
-    "@types/node": "^20.11.0",
-    "@types/vscode": "^1.90.0",
-    "typescript": "^5.4.0"
+    "@types/diff": "^7.0.0",
+    "@types/node": "^22.13.1",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
   }
 }
