@@ -10,8 +10,10 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true
   },
-  "include": ["src", "tests"],
-  "exclude": ["src/webview", "node_modules", "out"]
+  "include": ["src/**/*", "tests/**/*"],
+  "exclude": ["src/webview", "node_modules", "out", "dist", "member-1-core-repopilot"]
 }

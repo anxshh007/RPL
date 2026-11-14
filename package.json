@@ -1,21 +1,33 @@
 {
   "name": "repopilot-ai",
   "displayName": "RepoPilot AI",
-  "description": "Impact-aware coding agent for VS Code with hunk-level human approval and automated test verification.",
-  "version": "0.0.1",
+  "description": "An Impact-Aware Autonomous Coding Agent with Automated Verification",
+  "version": "0.1.0",
   "publisher": "your-team-id",
   "private": true,
   "license": "MIT",
   "engines": {
     "vscode": "^1.90.0"
   },
-  "categories": ["AI", "Programming Languages"],
-  "activationEvents": ["onStartupFinished"],
+  "categories": [
+    "AI",
+    "Programming Languages",
+    "Testing"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./out/src/extension/extension.js",
   "contributes": {
     "commands": [
-      { "command": "repopilot.open", "title": "RepoPilot: Open Panel" },
-      { "command": "repopilot.inlineEdit", "title": "RepoPilot: Edit Selection" }
+      {
+        "command": "repopilot.open",
+        "title": "RepoPilot: Open Panel"
+      },
+      {
+        "command": "repopilot.inlineEdit",
+        "title": "RepoPilot: Edit Selection"
+      }
     ],
     "keybindings": [
       {
@@ -53,12 +65,24 @@
   },
   "scripts": {
     "compile": "tsc -p ./",
+    "build": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-     "test": "node --test out/tests/unit/shared/contracts.test.js out/tests/unit/agent/controller.test.js out/tests/unit/impact/fixtures.test.js out/tests/unit/impact/dependency-graph.test.js out/tests/unit/impact/impact-analyser.test.js out/tests/unit/impact/impact-rules.test.js out/tests/unit/impact/impact-report.test.js out/tests/unit/impact/index.test.js out/tests/unit/impact/graph-adapter.test.js out/tests/unit/impact/tools.test.js"
+    "typecheck": "tsc --noEmit -p ./",
+    "test": "node --test out/tests/unit/shared/contracts.test.js out/tests/unit/agent/controller.test.js out/tests/unit/impact/fixtures.test.js out/tests/unit/impact/dependency-graph.test.js out/tests/unit/impact/impact-analyser.test.js out/tests/unit/impact/impact-rules.test.js out/tests/unit/impact/impact-report.test.js out/tests/unit/impact/index.test.js out/tests/unit/impact/graph-adapter.test.js out/tests/unit/impact/tools.test.js",
+    "test:unit": "npm run compile && node --test out/tests/unit/**/*.test.js",
+    "test:integration": "npm run compile && node --test out/tests/integration/**/*.test.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.6.0",
+    "@truefoundry/trueforge-sdk": "^0.185.0",
+    "diff": "^7.0.0",
+    "zod": "^3.24.1"
   },
   "devDependencies": {
-    "@types/node": "^20.11.0",
+    "@types/diff": "^7.0.0",
+    "@types/node": "^22.13.1",
     "@types/vscode": "^1.90.0",
-    "typescript": "^5.4.0"
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
   }
 }
