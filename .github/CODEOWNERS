@@ -1,0 +1,28 @@
+# Code owners for RepoPilot AI.
+# Member 1 = AsthaSingh29, Member 2 = adityashukla15, Member 3 = anxshh007 (Lead),
+# Member 4 = tusharmondal912335-byte, Member 5 = supriyo251017002050-dotcom
+# Changes to shared contracts need the Lead + every module owner.
+
+*                         @anxshh007
+/src/shared/              @anxshh007 @AsthaSingh29 @adityashukla15 @tusharmondal912335-byte @supriyo251017002050-dotcom
+/AGENTS.md                @anxshh007
+/docs/DECISIONS.md        @anxshh007
+/package.json             @anxshh007 @AsthaSingh29
+
+/src/agent/               @AsthaSingh29
+/src/mcp/                 @AsthaSingh29
+/src/edits/               @AsthaSingh29
+/tests/unit/agent/        @AsthaSingh29
+
+/src/repository/          @adityashukla15
+/tests/unit/repository/   @adityashukla15
+
+/src/impact/              @anxshh007
+/tests/unit/impact/       @anxshh007
+
+/src/verification/        @tusharmondal912335-byte
+/tests/unit/verification/ @tusharmondal912335-byte
+
+/src/extension/           @supriyo251017002050-dotcom
+/src/webview/             @supriyo251017002050-dotcom
+/tests/integration/       @supriyo251017002050-dotcom @AsthaSingh29
