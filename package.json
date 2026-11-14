@@ -54,7 +54,7 @@
   "scripts": {
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "test": "node --test out/tests/unit/shared/contracts.test.js out/tests/unit/agent/controller.test.js"
+    "test": "node --test out/tests/unit/shared/contracts.test.js out/tests/unit/agent/controller.test.js out/tests/unit/verification/verification.test.js"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
