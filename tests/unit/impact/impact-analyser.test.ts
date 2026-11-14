@@ -90,6 +90,7 @@ test('changed targets: the active file is used when nothing is proposed', () => 
     targets: [A],
     source: 'request',
     warnings: [],
+    rejectedCount: 0,
   });
 });
 
@@ -102,6 +103,7 @@ test('changed targets: active file and mentions are combined, deduplicated and s
     targets: [A, B, C],
     source: 'request',
     warnings: [],
+    rejectedCount: 0,
   });
 });
 
@@ -109,7 +111,7 @@ test('changed targets: non-empty proposed files replace the request', () => {
   const P = MINI_FLASK_PATHS;
   assert.deepEqual(
     resolveChangedTargets(miniFlaskProposed.request, miniFlaskProposed.proposedFiles),
-    { targets: [P.cli, P.helpers], source: 'proposed_files', warnings: [] },
+    { targets: [P.cli, P.helpers], source: 'proposed_files', warnings: [], rejectedCount: 0 },
   );
 
   const request = makeRequest('r2', { activeFile: A, explicitFileMentions: [B] });
@@ -122,6 +124,7 @@ test('changed targets: empty, null or missing proposed files fall back to the re
       targets: [A],
       source: 'request',
       warnings: [],
+      rejectedCount: 0,
     });
   }
 });
@@ -133,6 +136,7 @@ test('changed targets: none given returns an empty list and a warning', () => {
     warnings: [
       'No changed files were given (no proposed files, active file or file mentions); nothing to analyse.',
     ],
+    rejectedCount: 0,
   });
 });
 
@@ -155,6 +159,7 @@ test('changed targets: bad paths are rejected with a warning and good ones are k
       `Ignored changed file "${BAD_PATHS.mentionParent}": paths containing ".." are not allowed.`,
       `Ignored changed file "${BAD_PATHS.mentionAbsolute}": absolute paths are not allowed.`,
     ],
+    rejectedCount: 2,
   });
 });
 
@@ -168,6 +173,7 @@ test('changed targets: when every path is rejected, the list is empty and says w
       'Ignored changed file "/etc/hosts": absolute paths are not allowed.',
       'No valid changed files remain after rejecting bad paths; nothing to analyse.',
     ],
+    rejectedCount: 2,
   });
 });
 

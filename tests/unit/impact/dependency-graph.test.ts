@@ -2,10 +2,13 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
+  DEFAULT_GRAPH_CACHE_SIZE,
   MAX_DETAILED_WARNINGS,
   buildDependencyGraph,
+  createGraphCache,
   dependantEdgesOf,
   dependencyEdgesOf,
+  graphCacheKey,
   normalisePath,
 } from '../../../src/impact/dependency-graph';
 import type { DependencyGraph } from '../../../src/impact/dependency-graph';
@@ -39,6 +42,7 @@ function snapshot(graph: DependencyGraph): Record<string, unknown> {
     unresolvedImports: graph.unresolvedImports,
     rejectedPaths: graph.rejectedPaths,
     warnings: graph.warnings,
+    droppedInput: graph.droppedInput,
   };
 }
 
@@ -83,8 +87,63 @@ test('normalisePath: tidies leading "./", backslashes, repeated slashes and "." 
 
 test('normalisePath: keeps case and dots that are not path segments', () => {
   assert.deepEqual(normalisePath('Src/Pkg/A.py'), { ok: true, path: 'Src/Pkg/A.py' });
-  assert.deepEqual(normalisePath('.env'), { ok: true, path: '.env' });
+  assert.deepEqual(normalisePath('.editorconfig'), { ok: true, path: '.editorconfig' });
   assert.deepEqual(normalisePath('src/..hidden/a..b.py'), { ok: true, path: 'src/..hidden/a..b.py' });
+});
+
+test('normalisePath: rejects .git, node_modules and .env paths', () => {
+  const restricted = [
+    '.git/config',
+    'src/.git/hooks/pre-commit',
+    'node_modules/pkg/index.js',
+    'packages/web/node_modules/pkg/index.js',
+    '.env',
+    'config/.env',
+    '.env.local',
+    'config/.env.production',
+    '.env/lib/site.py',
+    '.GIT/config',
+    'Node_Modules/pkg/index.js',
+    './node_modules\\pkg\\index.js',
+  ];
+  for (const input of restricted) {
+    assert.deepEqual(normalisePath(input), { ok: false, reason: 'restricted' }, input);
+  }
+});
+
+test('normalisePath: names that only look like restricted ones are accepted', () => {
+  const allowed = [
+    '.github/workflows/ci.yml',
+    '.gitignore',
+    'src/git/config.py',
+    'src/node_modules_shim.py',
+    'src/env.py',
+    'docs/.envrc',
+    'src/my.env.py',
+  ];
+  for (const input of allowed) {
+    assert.deepEqual(normalisePath(input), { ok: true, path: input }, input);
+  }
+});
+
+test('bad paths: edges into .git, node_modules or .env are ignored with a warning', () => {
+  const graph = buildDependencyGraph({
+    dependencyEdges: [
+      edge(B, A),
+      edge(B, 'node_modules/requests/index.js'),
+      edge('.git/hooks/pre-commit', A),
+      edge(C, '.env'),
+    ],
+    unresolvedImports: [],
+  });
+  assert.deepEqual(graph.files, [A, B]);
+  assert.deepEqual(graph.edges, [{ from: B, to: A, kind: 'imports', evidence: 'observed' }]);
+  const why = 'paths in .git or node_modules, and .env files, are not allowed.';
+  assert.deepEqual(graph.warnings, [
+    `Ignored 1 dependency edge with path ".env": ${why}`,
+    `Ignored 1 dependency edge with path ".git/hooks/pre-commit": ${why}`,
+    `Ignored 1 dependency edge with path "node_modules/requests/index.js": ${why}`,
+  ]);
 });
 
 test('normalisePath: rejects absolute paths', () => {
@@ -120,7 +179,32 @@ test('empty graph: an empty repository gives an empty graph with no warnings', (
     unresolvedImports: [],
     rejectedPaths: [],
     warnings: [],
+    droppedInput: false,
   });
+});
+
+test('droppedInput: true only when part of the input was ignored', () => {
+  const dropped = (source: Parameters<typeof buildDependencyGraph>[0]): boolean =>
+    buildDependencyGraph(source).droppedInput;
+
+  assert.equal(dropped(miniFlask.context), false);
+  assert.equal(dropped(duplicateEdges.context), false, 'duplicates are merged, not dropped');
+  assert.equal(dropped(unresolvedImport.context), false, 'unresolved imports are kept aside');
+  assert.equal(
+    dropped({ dependencyEdges: [edge(A, A)], unresolvedImports: [] }),
+    false,
+    'a self edge carries no information',
+  );
+
+  assert.equal(dropped(badPath.context), true, 'rejected paths');
+  assert.equal(dropped(undefined), true, 'missing context');
+  assert.equal(dropped({}), true, 'missing lists');
+  assert.equal(dropped({ dependencyEdges: asEdges([null]), unresolvedImports: [] }), true, 'malformed edge');
+  assert.equal(
+    dropped({ dependencyEdges: [], unresolvedImports: asUnresolved([{ file: A }]) }),
+    true,
+    'malformed unresolved import',
+  );
 });
 
 test('empty graph: a file with no edges is not in the graph, and lookups return []', () => {
@@ -456,6 +540,183 @@ test('deterministic: input order does not change the graph', () => {
 
   assert.deepEqual(reversed, original);
   assert.deepEqual(shifted, original);
+});
+
+// ───────────────────────────── Cache ─────────────────────────────
+
+/** A fresh copy of a context's lists, so only the content can match, not the objects. */
+function copyOf(source: {
+  dependencyEdges: readonly DependencyEdge[];
+  unresolvedImports: readonly UnresolvedImport[];
+}): { dependencyEdges: DependencyEdge[]; unresolvedImports: UnresolvedImport[] } {
+  return {
+    dependencyEdges: source.dependencyEdges.map((e) => ({ ...e })),
+    unresolvedImports: source.unresolvedImports.map((u) => ({ ...u })),
+  };
+}
+
+test('cache: a repeated call returns the same graph without rebuilding', () => {
+  const cache = createGraphCache();
+  const first = cache.get(miniFlask.context);
+  const second = cache.get(miniFlask.context);
+
+  assert.equal(second, first, 'the very same graph object');
+  assert.deepEqual(cache.stats(), { hits: 1, misses: 1 });
+  assert.equal(cache.size, 1);
+  assert.deepEqual(snapshot(first), snapshot(buildDependencyGraph(miniFlask.context)));
+});
+
+test('cache: the key is the edge set, so equal content in any order is a hit', () => {
+  const cache = createGraphCache();
+  const first = cache.get(unresolvedImport.context);
+
+  const copy = copyOf(unresolvedImport.context);
+  assert.equal(cache.get(copy), first, 'a different object with equal content');
+
+  const shuffled = copyOf(miniFlask.context);
+  const original = cache.get(miniFlask.context);
+  shuffled.dependencyEdges.reverse();
+  assert.equal(cache.get(shuffled), original, 'the same edges in another order');
+
+  assert.deepEqual(cache.stats(), { hits: 2, misses: 2 });
+  assert.equal(
+    graphCacheKey(shuffled),
+    graphCacheKey(miniFlask.context),
+    'order does not change the key',
+  );
+});
+
+test('cache: any difference in the edges or unresolved imports is a miss, never a stale graph', () => {
+  const base = copyOf(directImport.context);
+  const variants = [
+    { ...base, dependencyEdges: [...base.dependencyEdges, edge(C, A)] },
+    { ...base, dependencyEdges: [edge(B, A, 'imports', 'inferred')] },
+    { ...base, dependencyEdges: [edge(B, A, 'references', 'observed')] },
+    { ...base, dependencyEdges: [edge(A, B)] },
+    { ...base, dependencyEdges: [] },
+    { ...base, unresolvedImports: [{ file: B, module: 'requests' }] },
+  ];
+
+  const cache = createGraphCache(20);
+  cache.get(base);
+  for (const variant of variants) {
+    assert.notEqual(graphCacheKey(variant), graphCacheKey(base));
+    assert.deepEqual(snapshot(cache.get(variant)), snapshot(buildDependencyGraph(variant)));
+  }
+  assert.deepEqual(cache.stats(), { hits: 0, misses: variants.length + 1 });
+});
+
+test('cache: a cached graph always equals a freshly built one, on every fixture', () => {
+  const cache = createGraphCache(allFixtures.length);
+  for (const pass of [1, 2]) {
+    for (const fixture of allFixtures) {
+      assert.deepEqual(
+        snapshot(cache.get(fixture.context)),
+        snapshot(buildDependencyGraph(fixture.context)),
+        `${fixture.name}, pass ${pass}`,
+      );
+    }
+  }
+  assert.ok(cache.stats().hits >= allFixtures.length, 'the second pass was served from the cache');
+});
+
+test('cache: malformed entries that produce different warnings have different keys', () => {
+  const withNull = { dependencyEdges: asEdges([{ from: null, to: A, kind: 'imports', evidence: 'observed' }]), unresolvedImports: [] };
+  const withNumber = { dependencyEdges: asEdges([{ from: 7, to: A, kind: 'imports', evidence: 'observed' }]), unresolvedImports: [] };
+  const withText = { dependencyEdges: asEdges([{ from: '<number>', to: A, kind: 'imports', evidence: 'observed' }]), unresolvedImports: [] };
+
+  const cache = createGraphCache();
+  assert.deepEqual(cache.get(withNull).warnings, [
+    'Ignored 1 dependency edge with path "<null>": the path is not a string.',
+  ]);
+  assert.deepEqual(cache.get(withNumber).warnings, [
+    'Ignored 1 dependency edge with path "<number>": the path is not a string.',
+  ]);
+  assert.deepEqual(cache.get(withText).warnings, []);
+  assert.deepEqual(cache.get(withText).files, ['<number>', A]);
+  assert.equal(cache.size, 3);
+});
+
+test('cache: a source with a missing list is built every time and not stored', () => {
+  const cache = createGraphCache();
+  for (const source of [undefined, null, {}, { dependencyEdges: [] }]) {
+    assert.equal(graphCacheKey(source), undefined);
+    assert.deepEqual(snapshot(cache.get(source)), snapshot(buildDependencyGraph(source)));
+  }
+  assert.equal(cache.size, 0);
+  assert.deepEqual(cache.stats(), { hits: 0, misses: 4 });
+});
+
+test('cache: when full, the least recently used graph is dropped', () => {
+  const cache = createGraphCache(2);
+  const first = cache.get(directImport.context);
+  cache.get(cycle.context);
+  assert.equal(cache.get(directImport.context), first, 'still cached, and now most recently used');
+
+  cache.get(miniFlask.context);
+  assert.equal(cache.size, 2);
+  assert.equal(cache.get(directImport.context), first, 'the recently used graph survived');
+  assert.deepEqual(cache.stats(), { hits: 2, misses: 3 });
+
+  cache.get(cycle.context);
+  assert.deepEqual(cache.stats(), { hits: 2, misses: 4 }, 'the least recently used graph was rebuilt');
+});
+
+test('cache: an invalid size falls back to the default', () => {
+  for (const size of [0, -1, 1.5, Number.NaN]) {
+    const cache = createGraphCache(size);
+    for (const fixture of allFixtures) {
+      cache.get(fixture.context);
+    }
+    assert.equal(cache.size, DEFAULT_GRAPH_CACHE_SIZE, String(size));
+  }
+});
+
+test('invalidate: drops only the graphs that contain one of the paths', () => {
+  const cache = createGraphCache();
+  cache.get(miniFlask.context);
+  cache.get(directImport.context);
+  cache.get(unresolvedImport.context);
+  assert.equal(cache.size, 3);
+
+  assert.equal(cache.invalidate(['src/not/in/any/graph.py']), 0);
+  assert.equal(cache.size, 3);
+
+  assert.equal(cache.invalidate([MINI_FLASK_PATHS.cli]), 1, 'only the mini-Flask graph has cli.py');
+  assert.equal(cache.size, 2);
+
+  // C appears only as the importer of an unresolved import.
+  assert.equal(cache.invalidate([C]), 1);
+  assert.equal(cache.size, 1);
+
+  assert.equal(cache.invalidate([A, B]), 1, 'one graph matches both paths and is counted once');
+  assert.equal(cache.size, 0);
+});
+
+test('invalidate: paths are normalised, bad paths are ignored, and no argument clears everything', () => {
+  const cache = createGraphCache();
+  cache.get(miniFlask.context);
+  cache.get(directImport.context);
+
+  assert.equal(cache.invalidate([]), 0, 'an empty list changes nothing');
+  assert.equal(cache.invalidate(['/etc/hosts', '../x.py', 42 as unknown as string]), 0);
+  assert.equal(cache.invalidate(['.\\src\\flask\\helpers.py']), 1, 'normalised before matching');
+  assert.equal(cache.size, 1);
+
+  assert.equal(cache.invalidate(), 1);
+  assert.equal(cache.size, 0);
+  assert.equal(cache.invalidate(), 0);
+});
+
+test('invalidate: the next call rebuilds and gives the same graph', () => {
+  const cache = createGraphCache();
+  const before = cache.get(miniFlask.context);
+  cache.invalidate([MINI_FLASK_PATHS.helpers]);
+  const after = cache.get(miniFlask.context);
+
+  assert.notEqual(after, before, 'a new graph object was built');
+  assert.deepEqual(snapshot(after), snapshot(before));
+  assert.deepEqual(cache.stats(), { hits: 0, misses: 2 });
 });
 
 test('read-only: the input is not mutated and output edges are new objects', () => {
