@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 /**
  * Repository Intelligence: plain MCP tool handlers (Member 2).
  *
@@ -29,6 +30,24 @@ import type {
 import { createRepositoryIntelligence } from './index';
 
 // ───────────────────────────── Shapes ─────────────────────────────
+=======
+import {
+  type ChangeRequest,
+  type RepositoryIntelligence,
+  type RepositoryContext,
+  type SearchResult,
+  type SymbolRecord,
+  type SafeError,
+  toSafeError,
+} from '../shared/contracts';
+import { TOOL_NAMES } from '../mcp/tool-names';
+import { normalizeWorkspacePath } from './path-safety';
+
+type SearchRepository = Pick<RepositoryIntelligence, 'search'>;
+type ReadRepository = Pick<RepositoryIntelligence, 'readFile'>;
+type SymbolRepository = Pick<RepositoryIntelligence, 'findSymbol'>;
+type ContextRepository = Pick<RepositoryIntelligence, 'getContext'>;
+>>>>>>> e8815f6 (feat: complete repository intelligence module)
 
 export interface SearchWorkspaceInput {
   query: string;
@@ -36,6 +55,7 @@ export interface SearchWorkspaceInput {
 }
 
 export interface ReadFileInput {
+<<<<<<< HEAD
   filePath?: string;
   path?: string;
   startLine?: number;
@@ -45,6 +65,9 @@ export interface ReadFileInput {
 export interface ReadFileResult {
   filePath: string;
   content: string;
+=======
+  path: string;
+>>>>>>> e8815f6 (feat: complete repository intelligence module)
   startLine?: number;
   endLine?: number;
 }
@@ -54,6 +77,7 @@ export interface FindSymbolInput {
   fileHint?: string;
 }
 
+<<<<<<< HEAD
 export interface GetRepositoryContextInput {
   request: ChangeRequest;
 }
@@ -176,10 +200,41 @@ export const REPOSITORY_TOOL_DEFINITIONS: readonly RepositoryToolDefinition[] = 
 
 // ──────────────────────────── Validation ────────────────────────────
 
+=======
+export type GetRepositoryContextInput = ChangeRequest;
+
+export const REPOSITORY_TOOL_DESCRIPTIONS = {
+  [TOOL_NAMES.searchWorkspace]: 'Search workspace text. Provide a non-empty query and optionally a result limit from 1 to 1000.',
+  [TOOL_NAMES.readFile]: 'Read a safe workspace-relative file path, optionally restricting the result to a 1-based line range.',
+  [TOOL_NAMES.findSymbol]: 'Find a Python symbol by exact name, optionally restricting the search to a workspace-relative file path.',
+  [TOOL_NAMES.getRepositoryContext]: 'Assemble relevant repository context using a ChangeRequest with requestId, instruction, mode, explicit mention arrays, and optional active-file selection.',
+} as const;
+
+export const REPOSITORY_TOOL_INPUT_DESCRIPTIONS = {
+  [TOOL_NAMES.searchWorkspace]: {
+    query: 'Required non-empty text to search for.',
+    limit: 'Optional positive integer result limit; maximum 1000. Defaults to the repository search default.',
+  },
+  [TOOL_NAMES.readFile]: {
+    path: 'Required workspace-relative POSIX path. Absolute paths, traversal, sensitive paths, and excluded directories are not allowed.',
+    startLine: 'Optional 1-based starting line.',
+    endLine: 'Optional 1-based ending line, greater than or equal to startLine.',
+  },
+  [TOOL_NAMES.findSymbol]: {
+    name: 'Required exact symbol name.',
+    fileHint: 'Optional safe workspace-relative Python file path.',
+  },
+  [TOOL_NAMES.getRepositoryContext]: {
+    ChangeRequest: 'The input object itself must have requestId, instruction, mode, explicitFileMentions, explicitSymbolMentions, and optional activeFile, selectedText, and selectionRange.',
+  },
+} as const;
+
+>>>>>>> e8815f6 (feat: complete repository intelligence module)
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+<<<<<<< HEAD
 function isStringList(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === 'string');
 }
@@ -336,10 +391,81 @@ export async function handleSearchWorkspace(
     return { ok: true, value: results };
   } catch (error) {
     return { ok: false, error: toSafeError(error) };
+=======
+function validationError(message: string): SafeError {
+  return { kind: 'validation', message, retryable: false };
+}
+
+function operationError(error: unknown): SafeError {
+  const safe = toSafeError(error);
+  return {
+    kind: safe.kind,
+    message: safe.kind === 'cancelled' ? 'Request cancelled.' : 'Repository operation failed.',
+    retryable: safe.retryable,
+  };
+}
+
+function isOptionalLine(value: unknown): value is number | undefined {
+  return value === undefined || (
+    typeof value === 'number' && Number.isInteger(value) && value >= 1
+  );
+}
+
+function isOptionalSearchLimit(value: unknown): value is number | undefined {
+  return value === undefined || (
+    typeof value === 'number' &&
+    Number.isInteger(value) &&
+    value >= 1 &&
+    value <= 1000
+  );
+}
+
+function isChangeRequest(value: unknown): value is ChangeRequest {
+  if (!isRecord(value)) return false;
+  const range = value.selectionRange;
+  const validRange = range === undefined ||
+    (isRecord(range) &&
+      typeof range.startLine === 'number' &&
+      Number.isInteger(range.startLine) &&
+      typeof range.endLine === 'number' &&
+      Number.isInteger(range.endLine) &&
+      range.startLine >= 1 &&
+      range.endLine >= range.startLine);
+
+  return typeof value.requestId === 'string' &&
+    value.requestId.trim().length > 0 &&
+    typeof value.instruction === 'string' &&
+    (value.mode === 'inline' || value.mode === 'agent') &&
+    Array.isArray(value.explicitFileMentions) &&
+    value.explicitFileMentions.every((item) => typeof item === 'string') &&
+    Array.isArray(value.explicitSymbolMentions) &&
+    value.explicitSymbolMentions.every((item) => typeof item === 'string') &&
+    (value.activeFile === undefined || typeof value.activeFile === 'string') &&
+    (value.selectedText === undefined || typeof value.selectedText === 'string') &&
+    validRange;
+}
+
+export async function handleSearchWorkspace(
+  repository: SearchRepository,
+  input: unknown,
+): Promise<SearchResult[] | SafeError> {
+  if (!isRecord(input) ||
+      typeof input.query !== 'string' ||
+      input.query.trim().length === 0 ||
+      !isOptionalSearchLimit(input.limit)) {
+    return validationError('Search input must include a non-empty query and an optional integer limit from 1 to 1000.');
+  }
+
+  try {
+    return await repository.search(input.query.trim(), input.limit);
+  } catch (error) {
+    return operationError(error);
+>>>>>>> e8815f6 (feat: complete repository intelligence module)
   }
 }
 
 export async function handleReadFile(
+<<<<<<< HEAD
   repo: RepositoryIntelligence,
   input: unknown,
   signal?: AbortSignal,
@@ -363,10 +489,41 @@ export async function handleReadFile(
     };
   } catch (error) {
     return { ok: false, error: toSafeError(error) };
+=======
+  repository: ReadRepository,
+  input: unknown,
+): Promise<string | SafeError> {
+  if (!isRecord(input) ||
+      typeof input.path !== 'string' ||
+      !isOptionalLine(input.startLine) ||
+      !isOptionalLine(input.endLine) ||
+      (input.endLine !== undefined &&
+        input.startLine !== undefined &&
+        input.endLine < input.startLine)) {
+    return validationError('Read-file input must include a workspace-relative path and an optional valid 1-based line range.');
+  }
+
+  let safePath: string;
+  try {
+    safePath = normalizeWorkspacePath(input.path);
+  } catch {
+    return validationError('Read-file path must be a safe workspace-relative path.');
+  }
+
+  try {
+    return await repository.readFile(
+      safePath,
+      input.startLine,
+      input.endLine,
+    );
+  } catch (error) {
+    return operationError(error);
+>>>>>>> e8815f6 (feat: complete repository intelligence module)
   }
 }
 
 export async function handleFindSymbol(
+<<<<<<< HEAD
   repo: RepositoryIntelligence,
   input: unknown,
   signal?: AbortSignal,
@@ -381,10 +538,36 @@ export async function handleFindSymbol(
     return { ok: true, value: symbols };
   } catch (error) {
     return { ok: false, error: toSafeError(error) };
+=======
+  repository: SymbolRepository,
+  input: unknown,
+): Promise<SymbolRecord[] | SafeError> {
+  if (!isRecord(input) ||
+      typeof input.name !== 'string' ||
+      input.name.trim().length === 0 ||
+      (input.fileHint !== undefined && typeof input.fileHint !== 'string')) {
+    return validationError('Find-symbol input must include a non-empty symbol name and an optional file path.');
+  }
+
+  let fileHint: string | undefined;
+  if (typeof input.fileHint === 'string') {
+    try {
+      fileHint = normalizeWorkspacePath(input.fileHint);
+    } catch {
+      return validationError('Symbol file hint must be a safe workspace-relative path.');
+    }
+  }
+
+  try {
+    return await repository.findSymbol(input.name.trim(), fileHint);
+  } catch (error) {
+    return operationError(error);
+>>>>>>> e8815f6 (feat: complete repository intelligence module)
   }
 }
 
 export async function handleGetRepositoryContext(
+<<<<<<< HEAD
   repo: RepositoryIntelligence,
   input: unknown,
   signal?: AbortSignal,
@@ -432,3 +615,34 @@ export function createRepositoryToolHandlers(
     [TOOL_NAMES.getRepositoryContext]: (input, signal) => handleGetRepositoryContext(repo, input, signal),
   };
 }
+=======
+  repository: ContextRepository,
+  input: unknown,
+): Promise<RepositoryContext | SafeError> {
+  if (!isChangeRequest(input)) {
+    return validationError('Repository-context input must match the ChangeRequest contract.');
+  }
+
+  if (input.activeFile !== undefined) {
+    try {
+      normalizeWorkspacePath(input.activeFile);
+    } catch {
+      return validationError('Active file must be a safe workspace-relative path.');
+    }
+  }
+
+  try {
+    const context = await repository.getContext(input);
+    return {
+      ...context,
+      warnings: context.warnings.map((warning) =>
+        warning.startsWith('Explicit file mention could not be resolved:')
+          ? 'An explicit file mention could not be resolved.'
+          : warning,
+      ),
+    };
+  } catch (error) {
+    return operationError(error);
+  }
+}
+>>>>>>> e8815f6 (feat: complete repository intelligence module)

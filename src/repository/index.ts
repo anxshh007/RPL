@@ -69,6 +69,7 @@ export {
 export type { ContextBudgetResult } from './context-budget';
 export { assembleRepositoryContext } from './repository-service';
 export type { RepositoryServiceOptions } from './repository-service';
+<<<<<<< HEAD
 export {
   createRepositoryToolHandlers,
   handleFindSymbol,
@@ -90,14 +91,53 @@ export type {
   SearchWorkspaceInput,
   ToolResult,
 } from './tools';
+=======
+
+export const DEFAULT_TOKEN_BUDGET = 16000;
+const MIN_TOKEN_BUDGET = 1;
+const MAX_TOKEN_BUDGET = 20000;
+
+function normalizeTokenBudget(value: unknown): { tokenBudget: number; warning?: string } {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return {
+      tokenBudget: DEFAULT_TOKEN_BUDGET,
+      warning: `Invalid context token budget; using the default of ${DEFAULT_TOKEN_BUDGET}.`,
+    };
+  }
+  if (value < MIN_TOKEN_BUDGET) {
+    return {
+      tokenBudget: MIN_TOKEN_BUDGET,
+      warning: `Context token budget was clamped to the minimum of ${MIN_TOKEN_BUDGET}.`,
+    };
+  }
+  if (value > MAX_TOKEN_BUDGET) {
+    return {
+      tokenBudget: MAX_TOKEN_BUDGET,
+      warning: `Context token budget was clamped to the maximum of ${MAX_TOKEN_BUDGET}.`,
+    };
+  }
+  if (!Number.isInteger(value)) {
+    return {
+      tokenBudget: DEFAULT_TOKEN_BUDGET,
+      warning: `Invalid context token budget; using the default of ${DEFAULT_TOKEN_BUDGET}.`,
+    };
+  }
+  return { tokenBudget: value };
+}
+>>>>>>> e8815f6 (feat: complete repository intelligence module)
 
 export function createRepositoryIntelligence(
-  tokenBudget = DEFAULT_TOKEN_BUDGET,
+  configuredTokenBudget: unknown = DEFAULT_TOKEN_BUDGET,
   rankingWeights: Partial<ContextRankingWeights> = DEFAULT_CONTEXT_RANKING_WEIGHTS,
 ): RepositoryIntelligence {
+<<<<<<< HEAD
   const normalizedBudget = normalizeContextTokenBudget(tokenBudget);
   const effectiveTokenBudget = normalizedBudget.tokenBudget;
   const budgetWarning = normalizedBudget.warning;
+=======
+  const { tokenBudget, warning: tokenBudgetWarning } =
+    normalizeTokenBudget(configuredTokenBudget);
+>>>>>>> e8815f6 (feat: complete repository intelligence module)
 
   let workspaceRoot: string | undefined;
   let pythonIndex: PythonWorkspaceIndex | undefined;
@@ -216,8 +256,13 @@ export function createRepositoryIntelligence(
           tokenBudget: effectiveTokenBudget,
           budgetConflicts: [],
           warnings: [
+<<<<<<< HEAD
             ...(budgetWarning ? [budgetWarning] : []),
             'Repository intelligence is not initialized; no context was assembled.',
+=======
+            'Repository intelligence is not initialized; no context was assembled.',
+            ...(tokenBudgetWarning ? [tokenBudgetWarning] : []),
+>>>>>>> e8815f6 (feat: complete repository intelligence module)
           ],
         };
       }
@@ -227,12 +272,20 @@ export function createRepositoryIntelligence(
         { tokenBudget: effectiveTokenBudget, rankingWeights },
         signal,
       );
+<<<<<<< HEAD
       if (budgetWarning && !context.warnings.includes(budgetWarning)) {
         context.warnings = [...new Set([...context.warnings, budgetWarning])].sort((left, right) =>
           left.localeCompare(right),
         );
       }
       return context;
+=======
+      if (!tokenBudgetWarning) return context;
+      return {
+        ...context,
+        warnings: [...context.warnings, tokenBudgetWarning],
+      };
+>>>>>>> e8815f6 (feat: complete repository intelligence module)
     },
     async getDependencies(paths: string[]): Promise<DependencyEdge[]> {
       if (paths.length === 0) return (await getDependencyIndex()).dependencyEdges;

@@ -1,15 +1,27 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+<<<<<<< HEAD
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createRepositoryIntelligence } from '../../../src/repository/index';
 import {
   createRepositoryToolHandlers,
+=======
+import type {
+  ChangeRequest,
+  RepositoryContext,
+  RepositoryIntelligence,
+  SearchResult,
+  SymbolRecord,
+} from '../../../src/shared/contracts';
+import {
+>>>>>>> e8815f6 (feat: complete repository intelligence module)
   handleFindSymbol,
   handleGetRepositoryContext,
   handleReadFile,
   handleSearchWorkspace,
+<<<<<<< HEAD
   REPOSITORY_TOOL_DEFINITIONS,
   validateFindSymbolInput,
   validateGetRepositoryContextInput,
@@ -212,5 +224,191 @@ describe('repository MCP tools', () => {
         assert.equal(contextRes.error.kind, 'cancelled');
       }
     });
+=======
+} from '../../../src/repository/tools';
+
+function isSafeError(
+  result: unknown,
+): result is { kind: string; message: string; retryable: boolean } {
+  return typeof result === 'object' && result !== null &&
+    'kind' in result && 'message' in result && 'retryable' in result;
+}
+
+function repository(
+  overrides: Partial<RepositoryIntelligence> = {},
+): RepositoryIntelligence {
+  return {
+    initialize: async () => {},
+    search: async () => [],
+    readFile: async () => '',
+    findSymbol: async () => [],
+    getContext: async (request): Promise<RepositoryContext> => ({
+      requestId: request.requestId,
+      relevantFiles: [],
+      relevantSymbols: [],
+      dependencyEdges: [],
+      unresolvedImports: [],
+      tokenEstimate: 0,
+      tokenBudget: 16000,
+      budgetConflicts: [],
+      warnings: [],
+    }),
+    getDependencies: async () => [],
+    invalidate: () => {},
+    reindex: async () => {},
+    ...overrides,
+  };
+}
+
+const request: ChangeRequest = {
+  requestId: 'tool-test',
+  instruction: 'Find relevant context',
+  mode: 'agent',
+  explicitFileMentions: [],
+  explicitSymbolMentions: [],
+};
+
+describe('repository tool handlers', () => {
+  it('searches with validated query and optional limit', async () => {
+    const expected: SearchResult[] = [{ path: 'src/app.ts', line: 2, text: 'match' }];
+    let received: [string, number | undefined] | undefined;
+    const result = await handleSearchWorkspace(repository({
+      search: async (query, limit) => {
+        received = [query, limit];
+        return expected;
+      },
+    }), { query: ' match ', limit: 12 });
+
+    assert.deepEqual(result, expected);
+    assert.deepEqual(received, ['match', 12]);
+  });
+
+  it('rejects invalid search inputs', async () => {
+    const service = repository();
+    for (const input of [{ query: '' }, { query: 'x', limit: 0 }, { query: 'x', limit: 1001 }]) {
+      const result = await handleSearchWorkspace(service, input);
+      assert.ok(isSafeError(result));
+      assert.equal(result.kind, 'validation');
+    }
+  });
+
+  it('reads safe workspace-relative paths with an optional line range', async () => {
+    let received: [string, number | undefined, number | undefined] | undefined;
+    const result = await handleReadFile(repository({
+      readFile: async (path, startLine, endLine) => {
+        received = [path, startLine, endLine];
+        return 'content';
+      },
+    }), { path: 'src\\app.py', startLine: 3, endLine: 5 });
+
+    assert.equal(result, 'content');
+    assert.deepEqual(received, ['src/app.py', 3, 5]);
+  });
+
+  it('rejects unsafe paths and invalid line ranges', async () => {
+    const service = repository();
+    for (const input of [
+      { path: '../outside.txt' },
+      { path: 'src/app.py', startLine: 0 },
+      { path: 'src/app.py', startLine: 5, endLine: 4 },
+    ]) {
+      const result = await handleReadFile(service, input);
+      assert.ok(isSafeError(result));
+      assert.equal(result.kind, 'validation');
+    }
+  });
+
+  it('finds symbols by exact name and normalized optional file hint', async () => {
+    const expected: SymbolRecord[] = [{
+      name: 'build_app',
+      kind: 'function',
+      file: 'src/app.py',
+      startLine: 1,
+      endLine: 2,
+    }];
+    let received: [string, string | undefined] | undefined;
+    const result = await handleFindSymbol(repository({
+      findSymbol: async (name, hint) => {
+        received = [name, hint];
+        return expected;
+      },
+    }), { name: ' build_app ', fileHint: 'src\\app.py' });
+
+    assert.deepEqual(result, expected);
+    assert.deepEqual(received, ['build_app', 'src/app.py']);
+  });
+
+  it('rejects invalid symbol inputs', async () => {
+    const service = repository();
+    for (const input of [
+      { name: '' },
+      { name: 'build_app', fileHint: '../outside.py' },
+      { name: 'build_app', fileHint: 42 },
+    ]) {
+      const result = await handleFindSymbol(service, input);
+      assert.ok(isSafeError(result));
+      assert.equal(result.kind, 'validation');
+    }
+  });
+
+  it('returns repository context and sanitizes unresolved mention warnings', async () => {
+    const expected: RepositoryContext = {
+      requestId: request.requestId,
+      relevantFiles: [],
+      relevantSymbols: [],
+      dependencyEdges: [],
+      unresolvedImports: [],
+      tokenEstimate: 0,
+      tokenBudget: 16000,
+      budgetConflicts: [],
+      warnings: ['Explicit file mention could not be resolved: C:\\private\\secret.py'],
+    };
+    let received: ChangeRequest | undefined;
+    const result = await handleGetRepositoryContext(repository({
+      getContext: async (value) => {
+        received = value;
+        return expected;
+      },
+    }), request);
+
+    assert.deepEqual(received, request);
+    assert.ok(!isSafeError(result));
+    assert.deepEqual(result.warnings, ['An explicit file mention could not be resolved.']);
+    assert.ok(!JSON.stringify(result).includes('C:\\private'));
+  });
+
+  it('rejects malformed or unsafe repository-context requests', async () => {
+    const service = repository();
+    for (const input of [
+      { ...request, mode: 'invalid' },
+      { ...request, explicitFileMentions: [4] },
+      { ...request, activeFile: 'C:\\private\\secret.py' },
+    ]) {
+      const result = await handleGetRepositoryContext(service, input);
+      assert.ok(isSafeError(result));
+      assert.equal(result.kind, 'validation');
+    }
+  });
+
+  it('returns sanitized SafeErrors when any repository operation fails', async () => {
+    const failure = () => {
+      throw new Error('API_KEY=top-secret at C:\\private\\repo');
+    };
+    const results = await Promise.all([
+      handleSearchWorkspace(repository({ search: async () => failure() }), { query: 'needle' }),
+      handleReadFile(repository({ readFile: async () => failure() }), { path: 'src/app.py' }),
+      handleFindSymbol(repository({ findSymbol: async () => failure() }), { name: 'build_app' }),
+      handleGetRepositoryContext(repository({ getContext: async () => failure() }), request),
+    ]);
+
+    for (const result of results) {
+      assert.ok(isSafeError(result));
+      assert.equal(result.kind, 'internal');
+      assert.equal(result.message, 'Repository operation failed.');
+      assert.equal(result.retryable, false);
+      assert.ok(!JSON.stringify(result).includes('top-secret'));
+      assert.ok(!JSON.stringify(result).includes('C:\\private'));
+    }
+>>>>>>> e8815f6 (feat: complete repository intelligence module)
   });
 });

@@ -185,6 +185,120 @@ describe('context ranking and budget', () => {
 });
 
 describe('repository context intelligence', () => {
+  it('returns deduplicated two-hop dependant edges for active files independently of excerpt budget', async () => {
+    const root = await createWorkspace();
+
+    try {
+      await writeWorkspaceFile(root, 'pkg/base.py', 'import pkg.direct\n');
+      await writeWorkspaceFile(root, 'pkg/direct.py', 'import pkg.base\nimport pkg.base\n');
+      await writeWorkspaceFile(root, 'pkg/deep.py', 'import pkg.direct\n');
+      await writeWorkspaceFile(root, 'other/source.py', 'import other.target\n');
+      await writeWorkspaceFile(root, 'other/target.py', '');
+
+      const repository = createRepositoryIntelligence(1);
+      await repository.initialize(root);
+      const context = await repository.getContext(request('Unrelated instruction', {
+        activeFile: 'pkg/base.py',
+      }));
+
+      assert.deepEqual(context.dependencyEdges, [
+        { from: 'pkg/base.py', to: 'pkg/direct.py', kind: 'imports', evidence: 'observed' },
+        { from: 'pkg/deep.py', to: 'pkg/direct.py', kind: 'imports', evidence: 'observed' },
+        { from: 'pkg/direct.py', to: 'pkg/base.py', kind: 'imports', evidence: 'observed' },
+      ]);
+      assert.ok(!context.relevantFiles.some(({ path: file }) =>
+        ['pkg/base.py', 'pkg/direct.py', 'pkg/deep.py'].includes(file)));
+      assert.ok(!context.dependencyEdges.some(({ from, to }) =>
+        from.startsWith('other/') || to.startsWith('other/')));
+      assert.equal(
+        new Set(context.dependencyEdges.map(({ from, to, kind }) => `${from}\0${to}\0${kind}`)).size,
+        context.dependencyEdges.length,
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('uses explicitly mentioned files as two-hop dependency roots', async () => {
+    const root = await createWorkspace();
+
+    try {
+      await writeWorkspaceFile(root, 'pkg/base.py', 'value = 1\n');
+      await writeWorkspaceFile(root, 'pkg/direct.py', 'import pkg.base\n');
+      await writeWorkspaceFile(root, 'pkg/deep.py', 'import pkg.direct\n');
+      await writeWorkspaceFile(root, 'other/source.py', 'import other.target\n');
+      await writeWorkspaceFile(root, 'other/target.py', '');
+
+      const repository = createRepositoryIntelligence();
+      await repository.initialize(root);
+      const context = await repository.getContext(request(
+        'Use the explicit file',
+        { explicitFileMentions: ['pkg/base.py'] },
+      ));
+
+      assert.ok(context.relevantFiles.some(({ path: file }) => file === 'pkg/base.py'));
+      assert.deepEqual(context.dependencyEdges, [
+        { from: 'pkg/deep.py', to: 'pkg/direct.py', kind: 'imports', evidence: 'observed' },
+        { from: 'pkg/direct.py', to: 'pkg/base.py', kind: 'imports', evidence: 'observed' },
+      ]);
+      assert.ok(!context.dependencyEdges.some(({ from, to }) =>
+        from.startsWith('other/') || to.startsWith('other/')));
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('normalizes configured token budgets and uses the default when missing or invalid', async () => {
+    const root = await createWorkspace();
+
+    try {
+      const cases: Array<{ value?: unknown; expected: number; warning?: string }> = [
+        { value: 0, expected: 1, warning: 'clamped to the minimum' },
+        { value: 1, expected: 1 },
+        { value: 25001, expected: 20000, warning: 'clamped to the maximum' },
+        { value: 20000, expected: 20000 },
+        { value: 9000, expected: 9000 },
+        { expected: 16000 },
+        { value: 'not-a-number', expected: 16000, warning: 'using the default' },
+        { value: Number.NaN, expected: 16000, warning: 'using the default' },
+      ];
+
+      for (const { value, expected, warning } of cases) {
+        const repository = createRepositoryIntelligence(value);
+        await repository.initialize(root);
+        const context = await repository.getContext(request('Check context budget'));
+
+        assert.equal(context.tokenBudget, expected);
+        if (warning) {
+          assert.ok(context.warnings.some((entry) => entry.includes(warning)));
+        } else {
+          assert.ok(!context.warnings.some((entry) => entry.includes('context token budget')));
+        }
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('preserves explicit mention budget conflicts after clamping', async () => {
+    const root = await createWorkspace();
+
+    try {
+      await writeWorkspaceFile(root, 'src/app.py', 'def build_app():\n    return "ready"\n');
+      const repository = createRepositoryIntelligence(0);
+      await repository.initialize(root);
+      const context = await repository.getContext(request(
+        'Update @file:src/app.py and @symbol:build_app',
+      ));
+
+      assert.equal(context.tokenBudget, 1);
+      assert.ok(context.budgetConflicts.includes('src/app.py'));
+      assert.ok(context.warnings.some((entry) => entry.includes('clamped to the minimum')));
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('resolves explicit symbols and returns explainable, budgeted context', async () => {
     const root = await createWorkspace();
 

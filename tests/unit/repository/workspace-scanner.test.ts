@@ -98,6 +98,8 @@ describe('listWorkspaceFiles', () => {
       assert.deepEqual(result.files, [
         'src/app.ts',
       ]);
+      assert.ok(!result.warnings.some((warning) =>
+        warning.includes('Git ignore engine unavailable')));
     } finally {
       await rm(root, { recursive: true, force: true });
     }
