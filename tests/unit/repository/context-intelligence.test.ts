@@ -202,4 +202,44 @@ describe('repository context intelligence', () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  it('clamps out-of-range token budget without throwing and emits a warning', async () => {
+    const root = await createWorkspace();
+
+    try {
+      await writeWorkspaceFile(root, 'src/main.py', 'def run():\n    pass\n');
+      const repository = createRepositoryIntelligence(32000);
+      await repository.initialize(root);
+
+      const context = await repository.getContext(request('Review code'));
+      assert.equal(context.tokenBudget, 20000);
+      assert.ok(context.warnings.some((warning) => warning.includes('clamped to 20000')));
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('preserves two-hop dependency edges independent of budget trimming', async () => {
+    const root = await createWorkspace();
+
+    try {
+      await writeWorkspaceFile(root, 'src/target.py', 'def base():\n    return 1\n');
+      await writeWorkspaceFile(root, 'src/intermediate.py', 'import target\ndef middle():\n    return target.base()\n');
+      await writeWorkspaceFile(root, 'src/outer.py', 'import intermediate\ndef outer():\n    return intermediate.middle()\n');
+
+      const repository = createRepositoryIntelligence();
+      await repository.initialize(root);
+
+      const context = await repository.getContext(request(
+        'Inspect @file:src/target.py',
+        { explicitFileMentions: ['src/target.py'] },
+      ));
+
+      const edgePairs = context.dependencyEdges.map((edge) => `${edge.from}->${edge.to}`);
+      assert.ok(edgePairs.includes('src/intermediate.py->src/target.py'), `expected 1-hop edge in ${edgePairs.join(', ')}`);
+      assert.ok(edgePairs.includes('src/outer.py->src/intermediate.py'), `expected 2-hop edge in ${edgePairs.join(', ')}`);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });

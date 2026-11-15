@@ -402,9 +402,6 @@ export async function listWorkspaceFiles(
 
     if (gitIgnored === null && !gitIgnoreUnavailable) {
       gitIgnoreUnavailable = true;
-      warnings.push(
-        'Git ignore engine unavailable; using basic .gitignore fallback.',
-      );
     }
 
     for (let index = 0; index < candidates.length; index += 1) {

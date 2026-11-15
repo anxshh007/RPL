@@ -51,6 +51,7 @@ const MAX_CONTEXT_CANDIDATES = 150;
 const MAX_CONTEXT_SYMBOLS = 100;
 const MAX_CONTEXT_DEPENDENCIES = 200;
 const MAX_CONTEXT_UNRESOLVED_IMPORTS = 100;
+const DEFAULT_TOKEN_BUDGET = 16000;
 
 const SOURCE_PRIORITY: Record<ContextRankingSignal, ContextSource> = {
   explicitFile: 'explicit_mention',
@@ -252,6 +253,18 @@ export async function assembleRepositoryContext(
   const explicitPaths = new Set(mentions.fileMentions);
   const resolvedExplicitSymbols: SymbolRecord[] = [];
 
+  let effectiveBudget = options.tokenBudget;
+  if (!Number.isInteger(effectiveBudget) || effectiveBudget < 1 || effectiveBudget > 20000) {
+    const clamped = Math.max(
+      1,
+      Math.min(20000, Math.round(Number.isFinite(effectiveBudget) ? effectiveBudget : DEFAULT_TOKEN_BUDGET)),
+    );
+    warnings.push(
+      `Context token budget ${effectiveBudget} is out of range (1-20000); clamped to ${clamped}.`,
+    );
+    effectiveBudget = clamped;
+  }
+
   for (const file of mentions.fileMentions) {
     addCandidate(candidates, file, 'explicitFile', weights.explicitFile);
   }
@@ -261,6 +274,7 @@ export async function assembleRepositoryContext(
     try {
       const activeFile = normalizeWorkspacePath(request.activeFile);
       if (availableFiles.has(activeFile)) {
+        explicitPaths.add(activeFile);
         const candidate = addCandidate(
           candidates,
           activeFile,
@@ -459,6 +473,29 @@ export async function assembleRepositoryContext(
       candidate.signals.delete('testOrDocumentation');
       candidate.signals.add('namingConvention');
     }
+
+    if (testFile && nameMatch && !sourceEvidence) {
+      for (const related of relatedCandidates) {
+        const fileName = path.posix.basename(file).toLowerCase();
+        const candidateName = path.posix.basename(related.path).toLowerCase();
+        if (
+          fileName.includes(candidateName.replace(/\.[^.]+$/, '')) ||
+          candidateName.includes(fileName.replace(/\.[^.]+$/, ''))
+        ) {
+          const alreadyExists = allDependencies.dependencyEdges.some(
+            (edge) => edge.from === file && edge.to === related.path,
+          );
+          if (!alreadyExists) {
+            allDependencies.dependencyEdges.push({
+              from: file,
+              to: related.path,
+              kind: 'tests',
+              evidence: 'inferred',
+            });
+          }
+        }
+      }
+    }
   }
 
   for (const candidate of candidates.values()) {
@@ -536,13 +573,51 @@ export async function assembleRepositoryContext(
       left.startLine - right.startLine ||
       left.name.localeCompare(right.name),
     );
+    const rootFiles = new Set<string>();
+    if (request.activeFile) {
+      try {
+        rootFiles.add(normalizeWorkspacePath(request.activeFile));
+      } catch {
+        // Safe ignore
+      }
+    }
+    for (const file of mentions.fileMentions) {
+      rootFiles.add(file);
+    }
+    for (const symbol of resolvedExplicitSymbols) {
+      rootFiles.add(symbol.file);
+    }
+    if (rootFiles.size === 0) {
+      for (const path of selectedPaths) rootFiles.add(path);
+    }
+
+    const hop1 = new Set<string>(rootFiles);
+    for (const edge of allDependencies.dependencyEdges) {
+      if (rootFiles.has(edge.to) || rootFiles.has(edge.from)) {
+        hop1.add(edge.from);
+        hop1.add(edge.to);
+      }
+    }
+
+    const hop2 = new Set<string>(hop1);
+    for (const edge of allDependencies.dependencyEdges) {
+      if (hop1.has(edge.to) || hop1.has(edge.from)) {
+        hop2.add(edge.from);
+        hop2.add(edge.to);
+      }
+    }
+
+    const neighbourhood = new Set<string>([...hop2, ...selectedPaths]);
+
     const edges = allDependencies.dependencyEdges
-      .filter((edge) => selectedPaths.has(edge.from) && selectedPaths.has(edge.to))
+      .filter((edge) => neighbourhood.has(edge.from) && neighbourhood.has(edge.to))
       .sort((left, right) =>
-        left.from.localeCompare(right.from) || left.to.localeCompare(right.to),
+        left.from.localeCompare(right.from) ||
+        left.to.localeCompare(right.to) ||
+        left.kind.localeCompare(right.kind),
       );
     const unresolvedImports = allDependencies.unresolvedImports
-      .filter((item) => selectedPaths.has(item.file))
+      .filter((item) => neighbourhood.has(item.file))
       .sort((left, right) =>
         left.file.localeCompare(right.file) || left.module.localeCompare(right.module),
       );
@@ -553,12 +628,12 @@ export async function assembleRepositoryContext(
     };
   }
 
-  let budget = fitContextToBudget(rankedFiles, options.tokenBudget, explicitPaths);
+  let budget = fitContextToBudget(rankedFiles, effectiveBudget, explicitPaths);
   let metadata = getContextMetadata(budget.relevantFiles);
   for (let iteration = 0; iteration < 3; iteration += 1) {
     const nextBudget = fitContextToBudget(
       rankedFiles,
-      options.tokenBudget,
+      effectiveBudget,
       explicitPaths,
       JSON.stringify(metadata),
     );
@@ -585,7 +660,7 @@ export async function assembleRepositoryContext(
     dependencyEdges: metadata.edges,
     unresolvedImports: metadata.unresolvedImports,
     tokenEstimate: budget.tokenEstimate,
-    tokenBudget: options.tokenBudget,
+    tokenBudget: effectiveBudget,
     budgetConflicts: budget.budgetConflicts,
     warnings: [...new Set(warnings)].sort((left, right) => left.localeCompare(right)),
   };

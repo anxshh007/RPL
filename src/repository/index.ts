@@ -1,5 +1,4 @@
 // OWNER: Member 2 — Repository Intelligence (brief: docs/briefs/02_member2_repository_intelligence.md)
-// STUB: replace with the real scanner / search / symbol index / ranker. Keep the exported factory name.
 import type {
   ChangeRequest,
   DependencyEdge,
@@ -61,6 +60,27 @@ export { estimateContextTokens, fitContextToBudget } from './context-budget';
 export type { ContextBudgetResult } from './context-budget';
 export { assembleRepositoryContext } from './repository-service';
 export type { RepositoryServiceOptions } from './repository-service';
+export {
+  createRepositoryToolHandlers,
+  handleFindSymbol,
+  handleGetRepositoryContext,
+  handleReadFile,
+  handleSearchWorkspace,
+  REPOSITORY_TOOL_DEFINITIONS,
+  validateFindSymbolInput,
+  validateGetRepositoryContextInput,
+  validateReadFileInput,
+  validateSearchWorkspaceInput,
+} from './tools';
+export type {
+  FindSymbolInput,
+  GetRepositoryContextInput,
+  ReadFileInput,
+  ReadFileResult,
+  RepositoryToolDefinition,
+  SearchWorkspaceInput,
+  ToolResult,
+} from './tools';
 
 export const DEFAULT_TOKEN_BUDGET = 16000;
 
@@ -68,8 +88,14 @@ export function createRepositoryIntelligence(
   tokenBudget = DEFAULT_TOKEN_BUDGET,
   rankingWeights: Partial<ContextRankingWeights> = DEFAULT_CONTEXT_RANKING_WEIGHTS,
 ): RepositoryIntelligence {
+  let effectiveTokenBudget = tokenBudget;
+  let budgetWarning: string | undefined;
   if (!Number.isInteger(tokenBudget) || tokenBudget < 1 || tokenBudget > 20000) {
-    throw new Error('Context token budget must be an integer between 1 and 20000.');
+    effectiveTokenBudget = Math.max(
+      1,
+      Math.min(20000, Math.round(Number.isFinite(tokenBudget) ? tokenBudget : DEFAULT_TOKEN_BUDGET)),
+    );
+    budgetWarning = `Context token budget ${tokenBudget} is out of range (1-20000); clamped to ${effectiveTokenBudget}.`;
   }
 
   let workspaceRoot: string | undefined;
@@ -186,17 +212,26 @@ export function createRepositoryIntelligence(
           dependencyEdges: [],
           unresolvedImports: [],
           tokenEstimate: 0,
-          tokenBudget,
+          tokenBudget: effectiveTokenBudget,
           budgetConflicts: [],
-          warnings: ['Repository intelligence is not initialized; no context was assembled.'],
+          warnings: [
+            ...(budgetWarning ? [budgetWarning] : []),
+            'Repository intelligence is not initialized; no context was assembled.',
+          ],
         };
       }
-      return assembleRepositoryContext(
+      const context = await assembleRepositoryContext(
         workspaceRoot,
         request,
-        { tokenBudget, rankingWeights },
+        { tokenBudget: effectiveTokenBudget, rankingWeights },
         signal,
       );
+      if (budgetWarning && !context.warnings.includes(budgetWarning)) {
+        context.warnings = [...new Set([...context.warnings, budgetWarning])].sort((left, right) =>
+          left.localeCompare(right),
+        );
+      }
+      return context;
     },
     async getDependencies(paths: string[]): Promise<DependencyEdge[]> {
       if (paths.length === 0) return (await getDependencyIndex()).dependencyEdges;
