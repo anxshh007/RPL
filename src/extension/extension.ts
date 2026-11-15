@@ -4,7 +4,7 @@
 import * as vscode from 'vscode';
 import { createRepoPilot, RepoPilotController } from '../agent';
 import { ChangeRequest, HostToWebview, isWebviewToHost } from '../shared/contracts';
-import { renderPlaceholderHtml } from './webview-html';
+import { renderWebviewHtml, renderPlaceholderHtml } from './webview-html';
 
 let panel: vscode.WebviewPanel | undefined;
 
@@ -69,9 +69,18 @@ function openPanel(context: vscode.ExtensionContext, controller: RepoPilotContro
   }
   panel = vscode.window.createWebviewPanel('repopilot', 'RepoPilot AI', vscode.ViewColumn.Beside, {
     enableScripts: true,
-    localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'media')],
+    localResourceRoots: [
+      vscode.Uri.joinPath(context.extensionUri, 'out'),
+      vscode.Uri.joinPath(context.extensionUri, 'media'),
+    ],
   });
-  panel.webview.html = renderPlaceholderHtml(panel.webview.cspSource);
+  const scriptUri = panel.webview.asWebviewUri(
+    vscode.Uri.joinPath(context.extensionUri, 'out', 'src', 'webview', 'webview.js')
+  );
+  const cssUri = panel.webview.asWebviewUri(
+    vscode.Uri.joinPath(context.extensionUri, 'out', 'src', 'webview', 'webview.css')
+  );
+  panel.webview.html = renderWebviewHtml(panel.webview.cspSource, scriptUri, cssUri);
   panel.onDidDispose(() => (panel = undefined), null, context.subscriptions);
 
   panel.webview.onDidReceiveMessage(

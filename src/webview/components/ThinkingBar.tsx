@@ -40,63 +40,82 @@ export const ThinkingBar: React.FC<ThinkingBarProps> = ({
   const completedCount = steps.filter((s) => s.status === 'completed').length;
 
   return (
-    <div className="border border-slate-700/80 bg-[#0E1223] rounded-xl p-3.5 shadow-md transition-all duration-200">
+    <div
+      className="border rounded-lg p-3 shadow-sm transition font-sans"
+      style={{
+        backgroundColor: 'var(--vscode-editor-background, #ffffff)',
+        borderColor: 'var(--vscode-panel-border, #d0d7de)',
+      }}
+    >
       <div
         role="button"
         tabIndex={0}
         aria-expanded={expanded}
-        aria-label="Toggle chain of thought reasoning steps"
-        className="flex items-center justify-between cursor-pointer select-none rounded-lg p-1 -m-1 hover:bg-slate-800/40 focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:outline-none transition-colors duration-150"
+        aria-label="Toggle reasoning steps"
+        className="flex items-center justify-between cursor-pointer select-none rounded p-1 -m-1 transition"
+        style={{
+          color: 'var(--vscode-editor-foreground, #1f2328)',
+        }}
         onClick={() => setExpanded(!expanded)}
         onKeyDown={handleKeyDown}
       >
-        <div className="flex items-center gap-2.5">
-          <div className="p-1 rounded-md bg-emerald-950/80 border border-emerald-700/50 text-emerald-400">
+        <div className="flex items-center gap-2">
+          <div className="p-1 rounded bg-blue-50 border border-blue-200 text-blue-600">
             <IconSparkles size={14} className={isStreaming ? 'animate-pulse' : ''} />
           </div>
-          <span className="text-xs font-semibold text-slate-100 font-mono tracking-tight">
+          <span className="text-xs font-semibold font-mono tracking-tight text-gray-900">
             {headline}
           </span>
         </div>
 
         <div className="flex items-center gap-2 text-xs font-mono">
-          <span className="text-slate-400 font-medium">
+          <span className="text-gray-500 font-medium">
             {completedCount}/{steps.length} steps
           </span>
           {elapsedSeconds > 0 && (
-            <span className="px-1.5 py-0.5 rounded bg-slate-800/80 text-slate-300 text-[11px] border border-slate-700/50">
+            <span
+              className="px-1.5 py-0.5 rounded text-[11px] border"
+              style={{
+                backgroundColor: 'var(--vscode-badge-background, #eaeef2)',
+                color: 'var(--vscode-badge-foreground, #24292f)',
+                borderColor: 'var(--vscode-panel-border, #d0d7de)',
+              }}
+            >
               {elapsedSeconds.toFixed(1)}s
             </span>
           )}
-          <span className="text-slate-400 hover:text-slate-200 transition-colors">
+          <span className="text-gray-500">
             {expanded ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
           </span>
         </div>
       </div>
 
       {expanded && steps.length > 0 && (
-        <div className="mt-3 pt-3 border-t border-slate-800 text-xs font-mono space-y-2 text-slate-300">
+        <div
+          className="mt-2.5 pt-2.5 border-t text-xs font-mono space-y-1.5 text-gray-700"
+          style={{ borderColor: 'var(--vscode-panel-border, #d0d7de)' }}
+        >
           {steps.map((step) => (
-            <div key={step.id} className="flex items-start gap-2.5 py-0.5">
+            <div key={step.id} className="flex items-start gap-2 py-0.5">
               <div className="mt-0.5 flex-shrink-0">
                 {step.status === 'completed' && (
-                  <IconCheckCircle size={14} className="text-emerald-400" />
+                  <IconCheckCircle size={14} className="text-emerald-600" />
                 )}
                 {step.status === 'running' && (
-                  <IconLoader size={14} className="text-sky-400 animate-spin" />
+                  <IconLoader size={14} className="text-blue-600 animate-spin" />
                 )}
                 {step.status === 'pending' && (
-                  <IconCircleDot size={14} className="text-slate-600" />
+                  <IconCircleDot size={14} className="text-gray-400" />
                 )}
               </div>
               <span
-                className={`transition-colors duration-150 ${
+                className={
                   step.status === 'running'
-                    ? 'text-sky-300 font-medium'
+                    ? 'text-blue-700 font-semibold'
                     : step.status === 'completed'
-                    ? 'text-slate-300'
-                    : 'text-slate-500'
-                }`}
+                    ? 'text-gray-700'
+                    : 'text-gray-400'
+                }
               >
                 {step.label}
               </span>

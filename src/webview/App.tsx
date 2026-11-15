@@ -5,16 +5,19 @@ import {
   ThinkingStep,
   ToolBlock,
   DiffReview,
+  makeDecisionKey,
+  parseDecisionKey,
   PromptInput,
   VerificationPanel,
   FeedbackBar,
   FileUpload,
+  ImpactPanel,
   IconSparkles,
   IconFlask,
-  IconGitBranch,
   IconZap,
   IconX,
 } from './components';
+import type { ChangePlan, ImpactReport, VerificationReport } from '../shared/contracts';
 
 export const App: React.FC = () => {
   const {
@@ -34,7 +37,7 @@ export const App: React.FC = () => {
   const [uploadedFiles, setUploadedFiles] = useState<Array<{ name: string; size: number; isImage?: boolean }>>([]);
 
   // Derive latest change plan, impact report, and verification report from event stream
-  const changePlan = useMemo(() => {
+  const changePlan = useMemo<ChangePlan | undefined>(() => {
     for (let i = events.length - 1; i >= 0; i--) {
       const e = events[i];
       if (e.type === 'change.proposed') return e.plan;
@@ -42,7 +45,7 @@ export const App: React.FC = () => {
     return undefined;
   }, [events]);
 
-  const impactReport = useMemo(() => {
+  const impactReport = useMemo<ImpactReport | undefined>(() => {
     for (let i = events.length - 1; i >= 0; i--) {
       const e = events[i];
       if (e.type === 'impact.ready') return e.report;
@@ -50,7 +53,7 @@ export const App: React.FC = () => {
     return undefined;
   }, [events]);
 
-  const verificationReport = useMemo(() => {
+  const verificationReport = useMemo<VerificationReport | undefined>(() => {
     for (let i = events.length - 1; i >= 0; i--) {
       const e = events[i];
       if (e.type === 'verification.completed') return e.report;
@@ -79,7 +82,7 @@ export const App: React.FC = () => {
   const handleDecision = (path: string, hunkId: string, decision: 'accept' | 'reject') => {
     setDecisions((prev) => {
       const next = new Map(prev);
-      next.set(`${path}:${hunkId}`, decision);
+      next.set(makeDecisionKey(path, hunkId), decision);
       return next;
     });
   };
@@ -88,7 +91,7 @@ export const App: React.FC = () => {
     if (!currentRequestId && !changePlan) return;
     const reqId = currentRequestId || changePlan?.requestId || '';
     const decisionList = Array.from(decisions.entries()).map(([key, decision]) => {
-      const [path, hunkId] = key.split(':');
+      const { path, hunkId } = parseDecisionKey(key);
       return { path, hunkId, decision };
     });
     applyHunks(reqId, decisionList);
@@ -117,50 +120,62 @@ export const App: React.FC = () => {
 
   const isRunning = !['idle', 'completed', 'cancelled', 'error'].includes(agentState);
 
-  const getStatusColor = (state: string) => {
+  const getStatusBadge = (state: string) => {
     switch (state) {
       case 'idle':
-        return 'bg-slate-700 text-slate-300 border-slate-600';
+        return { bg: '#f6f8fa', text: '#57606a', border: '#d0d7de' };
       case 'executing':
       case 'planning':
       case 'verifying':
-        return 'bg-emerald-950/80 text-emerald-400 border-emerald-700/60 animate-pulse';
+        return { bg: '#dafbe1', text: '#1a7f37', border: '#4ac26b' };
       case 'error':
-        return 'bg-rose-950/80 text-rose-400 border-rose-700/60';
+        return { bg: '#ffebe9', text: '#cf222e', border: '#ff8182' };
       case 'completed':
-        return 'bg-emerald-950/80 text-emerald-400 border-emerald-700/60';
+        return { bg: '#ddf4ff', text: '#0969da', border: '#54aeff' };
       default:
-        return 'bg-slate-800 text-slate-400 border-slate-700';
+        return { bg: '#f6f8fa', text: '#57606a', border: '#d0d7de' };
     }
   };
 
+  const statusColors = getStatusBadge(agentState);
+
   return (
-    <div className="min-h-screen bg-[#020617] text-[#F8FAFC] font-sans p-4 sm:p-6">
-      <div className="max-w-3xl mx-auto space-y-5">
+    <div
+      className="min-h-screen font-sans p-3 sm:p-5"
+      style={{
+        backgroundColor: 'var(--vscode-editor-background, #ffffff)',
+        color: 'var(--vscode-editor-foreground, #1f2328)',
+      }}
+    >
+      <div className="max-w-3xl mx-auto space-y-4">
         {/* Header Bar */}
-        <header className="flex items-center justify-between pb-4 border-b border-slate-800">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-400 to-sky-500 p-0.5 shadow-md flex items-center justify-center">
-              <div className="w-full h-full bg-[#0E1223] rounded-[10px] flex items-center justify-center text-emerald-400">
-                <IconSparkles size={16} />
-              </div>
+        <header
+          className="flex items-center justify-between pb-3 border-b"
+          style={{ borderColor: 'var(--vscode-panel-border, #d0d7de)' }}
+        >
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow-sm">
+              <IconSparkles size={15} />
             </div>
             <div>
-              <div className="flex items-center gap-2.5">
-                <h1 className="text-sm font-bold tracking-tight text-white font-mono">
+              <div className="flex items-center gap-2">
+                <h1 className="text-sm font-bold tracking-tight font-mono text-gray-900">
                   RepoPilot AI
                 </h1>
                 <span
-                  className={`text-[10px] font-mono font-medium px-2 py-0.5 rounded-full border ${getStatusColor(
-                    agentState
-                  )}`}
+                  className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-full border"
+                  style={{
+                    backgroundColor: statusColors.bg,
+                    color: statusColors.text,
+                    borderColor: statusColors.border,
+                  }}
                 >
                   {agentState}
                 </span>
               </div>
-              <p className="text-[11px] text-slate-400 font-mono mt-0.5">
+              <p className="text-[11px] text-gray-500 font-mono">
                 {workspace.available ? (
-                  <span>workspace: <span className="text-slate-200">{workspace.name}</span></span>
+                  <span>workspace: <span className="text-gray-800 font-semibold">{workspace.name}</span></span>
                 ) : (
                   'No workspace opened'
                 )}
@@ -168,42 +183,43 @@ export const App: React.FC = () => {
             </div>
           </div>
 
-          {/* Quick Action Badges */}
-          <div className="hidden sm:flex items-center gap-2">
+          {/* Quick Action Badges (Impact DAG button removed per review) */}
+          <div className="flex items-center gap-1.5 text-xs font-mono">
             <button
               type="button"
               onClick={() => submitInstruction('/ponytail-review', 'agent')}
               disabled={isRunning}
-              className="cursor-pointer inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#0E1223] hover:bg-slate-800 border border-slate-700 text-[11px] font-mono text-slate-300 hover:text-white transition-all duration-150 disabled:opacity-40"
+              className="cursor-pointer inline-flex items-center gap-1.5 px-2.5 py-1 rounded border text-[11px] transition disabled:opacity-40"
+              style={{
+                backgroundColor: 'var(--vscode-sideBar-background, #f6f8fa)',
+                borderColor: 'var(--vscode-panel-border, #d0d7de)',
+                color: 'var(--vscode-editor-foreground, #1f2328)',
+              }}
             >
-              <IconZap size={12} className="text-amber-400" />
+              <IconZap size={12} className="text-amber-500" />
               <span>Review Diff</span>
             </button>
             <button
               type="button"
               onClick={() => submitInstruction('/verify', 'agent')}
               disabled={isRunning}
-              className="cursor-pointer inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#0E1223] hover:bg-slate-800 border border-slate-700 text-[11px] font-mono text-slate-300 hover:text-white transition-all duration-150 disabled:opacity-40"
+              className="cursor-pointer inline-flex items-center gap-1.5 px-2.5 py-1 rounded border text-[11px] transition disabled:opacity-40"
+              style={{
+                backgroundColor: 'var(--vscode-sideBar-background, #f6f8fa)',
+                borderColor: 'var(--vscode-panel-border, #d0d7de)',
+                color: 'var(--vscode-editor-foreground, #1f2328)',
+              }}
             >
-              <IconFlask size={12} className="text-purple-400" />
+              <IconFlask size={12} className="text-purple-600" />
               <span>Run Tests</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => submitInstruction('/impact', 'agent')}
-              disabled={isRunning}
-              className="cursor-pointer inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#0E1223] hover:bg-slate-800 border border-slate-700 text-[11px] font-mono text-slate-300 hover:text-white transition-all duration-150 disabled:opacity-40"
-            >
-              <IconGitBranch size={12} className="text-emerald-400" />
-              <span>Impact DAG</span>
             </button>
           </div>
         </header>
 
         {/* Error Alert */}
         {errorMessage && (
-          <div className="p-3.5 rounded-xl bg-rose-950/80 border border-rose-800 text-rose-300 text-xs flex items-center gap-2 font-mono shadow-sm">
-            <IconX size={15} className="text-rose-400 flex-shrink-0" />
+          <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs flex items-center gap-2 font-mono shadow-sm">
+            <IconX size={14} className="text-red-600 flex-shrink-0" />
             <span>{errorMessage}</span>
           </div>
         )}
@@ -219,8 +235,8 @@ export const App: React.FC = () => {
 
         {/* Tool Execution Blocks */}
         {toolEvents.length > 0 && (
-          <div className="space-y-2">
-            <div className="text-[11px] font-mono text-slate-400 px-1 font-semibold">
+          <div className="space-y-1.5">
+            <div className="text-[11px] font-mono text-gray-500 px-1 font-semibold">
               TOOL EXECUTIONS
             </div>
             {toolEvents.map((t, i) => (
@@ -232,6 +248,11 @@ export const App: React.FC = () => {
               />
             ))}
           </div>
+        )}
+
+        {/* ImpactLens Predictive Report Panel */}
+        {impactReport && (
+          <ImpactPanel report={impactReport} />
         )}
 
         {/* Diff Reviewer */}
