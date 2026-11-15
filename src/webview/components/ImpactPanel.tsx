@@ -52,112 +52,115 @@ export function getConfidenceBadge(confidence?: Confidence): { label: string; bg
   }
 }
 
+export function buildImpactFlowGraph(report: ImpactReport): { nodes: Node[]; edges: Edge[] } {
+  const { nodes = [], edges = [], changedTargets = [], affectedFiles = [] } = report;
+  const changedSet = new Set(changedTargets);
+  const posMap = new Map<string, { col: number; row: number }>();
+  const colCounters: number[] = [0, 0, 0, 0];
+
+  nodes.forEach((n) => {
+    let col = 0;
+    if (changedSet.has(n.id) || n.highlight === 'changed') {
+      col = 2; // target on right
+    } else {
+      const aff = affectedFiles.find((a) => a.path === n.id);
+      const hops = aff ? aff.relationshipPath.length - 1 : 1;
+      col = Math.max(0, 2 - hops);
+    }
+    const row = colCounters[col]++;
+    posMap.set(n.id, { col, row });
+  });
+
+  const flowNodes: Node[] = nodes.map((node: GraphNode) => {
+    const isChanged = node.highlight === 'changed';
+    const riskColors = getRiskColors(node.risk);
+    const pos = posMap.get(node.id) || { col: 0, row: 0 };
+    const x = pos.col * 220 + 30;
+    const y = pos.row * 90 + 30;
+
+    return {
+      id: node.id,
+      position: { x, y },
+      targetPosition: Position.Right,
+      sourcePosition: Position.Left,
+      data: {
+        label: (
+          <div className="p-1 font-mono text-left">
+            <div className="font-semibold text-xs flex items-center justify-between gap-1.5">
+              <span className="truncate max-w-[140px]" title={node.path || node.id}>
+                {node.label || node.id}
+              </span>
+              {node.risk && (
+                <span
+                  className="text-[9px] uppercase px-1.5 py-0.2 rounded font-bold border"
+                  style={{
+                    backgroundColor: riskColors.bg,
+                    color: riskColors.text,
+                    borderColor: riskColors.border,
+                  }}
+                >
+                  {node.risk}
+                </span>
+              )}
+            </div>
+            <div className="text-[10px] text-gray-500 truncate" title={node.id}>
+              {isChanged ? '● Changed target' : `Kind: ${node.kind}`}
+            </div>
+          </div>
+        ),
+      },
+      style: {
+        backgroundColor: isChanged ? '#fbefff' : riskColors.bg,
+        borderColor: isChanged ? '#8250df' : riskColors.border,
+        borderWidth: isChanged ? '2px' : '1px',
+        borderRadius: '8px',
+        padding: '6px 8px',
+        width: 190,
+        boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+        fontSize: '11px',
+      },
+    };
+  });
+
+  const flowEdges: Edge[] = edges.map((edge: GraphEdge) => {
+    const isInferred = edge.evidence === 'inferred';
+    return {
+      id: edge.id,
+      source: edge.source,
+      target: edge.target,
+      animated: isInferred,
+      label: edge.kind,
+      labelStyle: { fill: '#57606a', fontSize: 10, fontFamily: 'monospace' },
+      style: {
+        stroke: isInferred ? '#9a6700' : '#57606a',
+        strokeWidth: 1.5,
+        strokeDasharray: isInferred ? '5,5' : undefined,
+      },
+      markerEnd: {
+        type: MarkerType.ArrowClosed,
+        color: isInferred ? '#9a6700' : '#57606a',
+      },
+    };
+  });
+
+  return { nodes: flowNodes, edges: flowEdges };
+}
+
 export const ImpactPanel: React.FC<ImpactPanelProps> = ({ report }) => {
   const [activeTab, setActiveTab] = useState<'graph' | 'list'>('graph');
   const [showLimitations, setShowLimitations] = useState(false);
   const [expandedFile, setExpandedFile] = useState<string | null>(null);
 
+  const { nodes: flowNodes, edges: flowEdges } = useMemo(() => {
+    if (!report) return { nodes: [], edges: [] };
+    return buildImpactFlowGraph(report);
+  }, [report]);
+
   if (!report) {
     return null;
   }
 
-  const { summary, nodes = [], edges = [], affectedFiles = [], warnings = [], limitations = [] } = report;
-
-  // Transform report nodes into ReactFlow nodes
-  const flowNodes: Node[] = useMemo(() => {
-    // Map changed targets to level 0, direct dependants to level 1, further to level 2+
-    const changedSet = new Set(report.changedTargets);
-    const posMap = new Map<string, { col: number; row: number }>();
-    const colCounters: number[] = [0, 0, 0, 0];
-
-    nodes.forEach((n) => {
-      let col = 0;
-      if (changedSet.has(n.id) || n.highlight === 'changed') {
-        col = 2; // target on right
-      } else {
-        const aff = affectedFiles.find((a) => a.path === n.id);
-        const hops = aff ? aff.relationshipPath.length - 1 : 1;
-        col = Math.max(0, 2 - hops);
-      }
-      const row = colCounters[col]++;
-      posMap.set(n.id, { col, row });
-    });
-
-    return nodes.map((node: GraphNode) => {
-      const isChanged = node.highlight === 'changed';
-      const riskColors = getRiskColors(node.risk);
-      const pos = posMap.get(node.id) || { col: 0, row: 0 };
-      const x = pos.col * 220 + 30;
-      const y = pos.row * 90 + 30;
-
-      return {
-        id: node.id,
-        position: { x, y },
-        targetPosition: Position.Right,
-        sourcePosition: Position.Left,
-        data: {
-          label: (
-            <div className="p-1 font-mono text-left">
-              <div className="font-semibold text-xs flex items-center justify-between gap-1.5">
-                <span className="truncate max-w-[140px]" title={node.path || node.id}>
-                  {node.label || node.id}
-                </span>
-                {node.risk && (
-                  <span
-                    className="text-[9px] uppercase px-1.5 py-0.2 rounded font-bold border"
-                    style={{
-                      backgroundColor: riskColors.bg,
-                      color: riskColors.text,
-                      borderColor: riskColors.border,
-                    }}
-                  >
-                    {node.risk}
-                  </span>
-                )}
-              </div>
-              <div className="text-[10px] text-gray-500 truncate" title={node.id}>
-                {isChanged ? '● Changed target' : `Kind: ${node.kind}`}
-              </div>
-            </div>
-          ),
-        },
-        style: {
-          backgroundColor: isChanged ? '#fbefff' : riskColors.bg,
-          borderColor: isChanged ? '#8250df' : riskColors.border,
-          borderWidth: isChanged ? '2px' : '1px',
-          borderRadius: '8px',
-          padding: '6px 8px',
-          width: 190,
-          boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-          fontSize: '11px',
-        },
-      };
-    });
-  }, [nodes, affectedFiles, report.changedTargets]);
-
-  // Transform report edges into ReactFlow edges
-  const flowEdges: Edge[] = useMemo(() => {
-    return edges.map((edge: GraphEdge) => {
-      const isInferred = edge.evidence === 'inferred';
-      return {
-        id: edge.id,
-        source: edge.source,
-        target: edge.target,
-        animated: isInferred,
-        label: edge.kind,
-        labelStyle: { fill: '#57606a', fontSize: 10, fontFamily: 'monospace' },
-        style: {
-          stroke: isInferred ? '#9a6700' : '#57606a',
-          strokeWidth: 1.5,
-          strokeDasharray: isInferred ? '5,5' : undefined,
-        },
-        markerEnd: {
-          type: MarkerType.ArrowClosed,
-          color: isInferred ? '#9a6700' : '#57606a',
-        },
-      };
-    });
-  }, [edges]);
+  const { summary, affectedFiles = [], warnings = [], limitations = [] } = report;
 
   return (
     <div
@@ -198,7 +201,7 @@ export const ImpactPanel: React.FC<ImpactPanelProps> = ({ report }) => {
                 : 'text-gray-600 hover:text-gray-900'
             }`}
           >
-            Graph ({nodes.length} nodes)
+            Graph ({flowNodes.length} nodes)
           </button>
           <button
             type="button"

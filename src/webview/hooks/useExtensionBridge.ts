@@ -1,5 +1,12 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import type { HostToWebview, WebviewToHost, RepoPilotEvent, HunkDecision } from '../../shared/contracts';
+import type {
+  HostToWebview,
+  WebviewToHost,
+  RepoPilotEvent,
+  HunkDecision,
+  ApplyResult,
+  UndoResult,
+} from '../../shared/contracts';
 
 declare function acquireVsCodeApi(): {
   postMessage: (message: WebviewToHost) => void;
@@ -21,6 +28,11 @@ export function useExtensionBridge() {
   const [currentRequestId, setCurrentRequestId] = useState<string | null>(null);
   const [agentState, setAgentState] = useState<string>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [warningMessage, setWarningMessage] = useState<string | null>(null);
+  const [streamingDelta, setStreamingDelta] = useState<string>('');
+  const [lastApplyResult, setLastApplyResult] = useState<ApplyResult | null>(null);
+  const [lastUndoResult, setLastUndoResult] = useState<UndoResult | null>(null);
+  const [verificationTests, setVerificationTests] = useState<string[] | null>(null);
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent<HostToWebview>) => {
@@ -35,13 +47,45 @@ export function useExtensionBridge() {
         const e = msg.event;
         setEvents((prev) => [...prev, e]);
 
-        if (e.type === 'agent.status') {
-          setAgentState(e.state);
-          if (['completed', 'cancelled', 'error'].includes(e.state)) {
+        switch (e.type) {
+          case 'agent.status':
+            setAgentState(e.state);
+            if (['completed', 'cancelled', 'error'].includes(e.state)) {
+              setCurrentRequestId(null);
+            } else {
+              setCurrentRequestId(e.requestId);
+            }
+            break;
+
+          case 'agent.error':
+            setAgentState('error');
+            setErrorMessage(e.error.message);
             setCurrentRequestId(null);
-          } else {
-            setCurrentRequestId(e.requestId);
-          }
+            break;
+
+          case 'agent.warning':
+            setWarningMessage(e.message);
+            break;
+
+          case 'agent.delta':
+            setStreamingDelta((prev) => prev + e.text);
+            break;
+
+          case 'change.applied':
+            setLastApplyResult(e.result);
+            break;
+
+          case 'change.undone':
+            setLastUndoResult(e.result);
+            break;
+
+          case 'verification.started':
+            setVerificationTests(e.tests);
+            break;
+
+          case 'verification.completed':
+            setVerificationTests(null);
+            break;
         }
       }
     };
@@ -55,6 +99,10 @@ export function useExtensionBridge() {
 
   const submitInstruction = useCallback((instruction: string, mode: 'inline' | 'agent' = 'agent') => {
     setErrorMessage(null);
+    setWarningMessage(null);
+    setStreamingDelta('');
+    setLastApplyResult(null);
+    setLastUndoResult(null);
     getVsCode()?.postMessage({ type: 'ui.submit', instruction, mode });
   }, []);
 
@@ -80,6 +128,11 @@ export function useExtensionBridge() {
     currentRequestId,
     agentState,
     errorMessage,
+    warningMessage,
+    streamingDelta,
+    lastApplyResult,
+    lastUndoResult,
+    verificationTests,
     submitInstruction,
     cancelRequest,
     applyHunks,

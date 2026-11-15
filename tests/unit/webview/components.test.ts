@@ -6,6 +6,8 @@ import type {
   HunkDecision,
   ImpactReport,
   VerificationReport,
+  ApplyResult,
+  UndoResult,
 } from '../../../src/shared/contracts';
 import {
   makeDecisionKey,
@@ -15,8 +17,114 @@ import {
 import {
   getRiskColors,
   getConfidenceBadge,
+  buildImpactFlowGraph,
 } from '../../../src/webview/components/ImpactPanel';
-import { sampleReport } from '../../fixtures/impact/sample-report';
+
+// ──────────────── Sample Report (Self-contained UTF-8 test fixture) ────────────────
+
+const sampleReport: ImpactReport = {
+  requestId: 'fixture-mini-flask',
+  generatedAt: '2026-01-01T00:00:00.000Z',
+  changedTargets: ['src/flask/helpers.py'],
+  affectedFiles: [
+    {
+      path: 'src/flask/app.py',
+      risk: 'high',
+      reasons: [
+        'imports src/flask/helpers.py, which is being changed',
+        'is an entry point or configuration file (name matches "app.py")',
+      ],
+      relationshipPath: ['src/flask/helpers.py', 'src/flask/app.py'],
+      confidence: 'high',
+      relatedSymbols: [],
+      matchedRule: 'direct-dependency',
+    },
+    {
+      path: 'tests/test_helpers.py',
+      risk: 'high',
+      reasons: [
+        'imports src/flask/helpers.py, which is being changed',
+        'is a test file linked to the change',
+      ],
+      relationshipPath: ['src/flask/helpers.py', 'tests/test_helpers.py'],
+      confidence: 'high',
+      relatedSymbols: [],
+      matchedRule: 'direct-dependency',
+    },
+    {
+      path: 'src/flask/cli.py',
+      risk: 'medium',
+      reasons: ['imports src/flask/helpers.py, which is being changed'],
+      relationshipPath: ['src/flask/helpers.py', 'src/flask/cli.py'],
+      confidence: 'high',
+      relatedSymbols: [],
+      matchedRule: 'direct-dependency',
+    },
+    {
+      path: 'docs/cli.rst',
+      risk: 'low',
+      reasons: ['references src/flask/cli.py, which is in the affected set'],
+      relationshipPath: ['src/flask/helpers.py', 'src/flask/cli.py', 'docs/cli.rst'],
+      confidence: 'medium',
+      relatedSymbols: [],
+      matchedRule: 'transitive-dependency',
+    },
+    {
+      path: 'tests/test_cli.py',
+      risk: 'high',
+      reasons: [
+        'imports src/flask/cli.py, which is in the affected set',
+        'is a test file linked to the change',
+      ],
+      relationshipPath: ['src/flask/helpers.py', 'src/flask/cli.py', 'tests/test_cli.py'],
+      confidence: 'high',
+      relatedSymbols: [],
+      matchedRule: 'transitive-dependency',
+    },
+  ],
+  testCandidates: [
+    {
+      path: 'tests/test_helpers.py',
+      reason: 'direct test for changed file src/flask/helpers.py',
+      source: 'impact',
+      confidence: 'high',
+    },
+    {
+      path: 'tests/test_cli.py',
+      reason: 'test for affected file src/flask/cli.py',
+      source: 'impact',
+      confidence: 'high',
+    },
+  ],
+  nodes: [
+    { id: 'src/flask/helpers.py', label: 'src/flask/helpers.py', kind: 'file', highlight: 'changed' },
+    { id: 'src/flask/app.py', label: 'src/flask/app.py', kind: 'file', highlight: 'affected', risk: 'high' },
+    { id: 'tests/test_helpers.py', label: 'tests/test_helpers.py', kind: 'test', highlight: 'affected', risk: 'high' },
+    { id: 'src/flask/cli.py', label: 'src/flask/cli.py', kind: 'file', highlight: 'affected', risk: 'medium' },
+    { id: 'docs/cli.rst', label: 'docs/cli.rst', kind: 'file', highlight: 'affected', risk: 'low' },
+    { id: 'tests/test_cli.py', label: 'tests/test_cli.py', kind: 'test', highlight: 'affected', risk: 'high' },
+  ],
+  edges: [
+    { id: 'src/flask/app.py→src/flask/helpers.py:imports', source: 'src/flask/app.py', target: 'src/flask/helpers.py', kind: 'imports', evidence: 'observed' },
+    { id: 'tests/test_helpers.py→src/flask/helpers.py:imports', source: 'tests/test_helpers.py', target: 'src/flask/helpers.py', kind: 'imports', evidence: 'observed' },
+    { id: 'src/flask/cli.py→src/flask/helpers.py:imports', source: 'src/flask/cli.py', target: 'src/flask/helpers.py', kind: 'imports', evidence: 'observed' },
+    { id: 'docs/cli.rst→src/flask/cli.py:references', source: 'docs/cli.rst', target: 'src/flask/cli.py', kind: 'references', evidence: 'inferred' },
+    { id: 'tests/test_cli.py→src/flask/cli.py:imports', source: 'tests/test_cli.py', target: 'src/flask/cli.py', kind: 'imports', evidence: 'observed' },
+  ],
+  summary: {
+    analysedFiles: 6,
+    affectedCount: 5,
+    high: 3,
+    medium: 1,
+    low: 1,
+    incomplete: false,
+  },
+  warnings: ['Inferred reference from docs/cli.rst is heuristic'],
+  limitations: [
+    'Dynamic imports via importlib are not traced',
+    'Analysis depth bounded to maxDepth=3',
+  ],
+};
 
 // ──────────────── 1. Decision Keys & Hunk Decisions ────────────────
 
@@ -61,6 +169,11 @@ interface AppStateFromEvents {
   impactReport?: ImpactReport;
   verificationReport?: VerificationReport;
   errorMessage?: string;
+  warningMessage?: string;
+  streamingDelta: string;
+  applyResult?: ApplyResult;
+  undoResult?: UndoResult;
+  verificationTests?: string[];
 }
 
 function deriveStateFromEvents(events: RepoPilotEvent[]): AppStateFromEvents {
@@ -69,6 +182,11 @@ function deriveStateFromEvents(events: RepoPilotEvent[]): AppStateFromEvents {
   let impactReport: ImpactReport | undefined;
   let verificationReport: VerificationReport | undefined;
   let errorMessage: string | undefined;
+  let warningMessage: string | undefined;
+  let streamingDelta = '';
+  let applyResult: ApplyResult | undefined;
+  let undoResult: UndoResult | undefined;
+  let verificationTests: string[] | undefined;
 
   for (const e of events) {
     if (e.type === 'agent.status') {
@@ -77,15 +195,37 @@ function deriveStateFromEvents(events: RepoPilotEvent[]): AppStateFromEvents {
       changePlan = e.plan;
     } else if (e.type === 'impact.ready') {
       impactReport = e.report;
+    } else if (e.type === 'verification.started') {
+      verificationTests = e.tests;
     } else if (e.type === 'verification.completed') {
       verificationReport = e.report;
+      verificationTests = undefined;
     } else if (e.type === 'agent.error') {
       agentState = 'error';
       errorMessage = e.error.message;
+    } else if (e.type === 'agent.warning') {
+      warningMessage = e.message;
+    } else if (e.type === 'agent.delta') {
+      streamingDelta += e.text;
+    } else if (e.type === 'change.applied') {
+      applyResult = e.result;
+    } else if (e.type === 'change.undone') {
+      undoResult = e.result;
     }
   }
 
-  return { agentState, changePlan, impactReport, verificationReport, errorMessage };
+  return {
+    agentState,
+    changePlan,
+    impactReport,
+    verificationReport,
+    errorMessage,
+    warningMessage,
+    streamingDelta,
+    applyResult,
+    undoResult,
+    verificationTests,
+  };
 }
 
 test('event stream correctly derives agent state, impact, diff and verification', () => {
@@ -113,6 +253,7 @@ test('event stream correctly derives agent state, impact, diff and verification'
         rationale: ['User requested off and n support'],
       },
     },
+    { type: 'verification.started', requestId: 'req-1', tests: ['tests/test_cli.py'] },
     { type: 'agent.status', requestId: 'req-1', state: 'verifying', message: 'Running tests' },
     {
       type: 'verification.completed',
@@ -146,21 +287,63 @@ test('event stream correctly derives agent state, impact, diff and verification'
   assert.equal(state.changePlan.files.length, 1);
   assert.ok(state.verificationReport);
   assert.equal(state.verificationReport.counts.passed, 11);
+  assert.equal(state.verificationTests, undefined);
   assert.equal(state.errorMessage, undefined);
 });
 
-test('event stream correctly captures error state', () => {
+test('event stream correctly captures error and warning states', () => {
   const events: RepoPilotEvent[] = [
     { type: 'agent.status', requestId: 'req-2', state: 'retrieving_context', message: 'Scanning' },
+    { type: 'agent.warning', requestId: 'req-2', message: 'Repository indexing reached file limit' },
     { type: 'agent.error', requestId: 'req-2', error: { kind: 'auth_config', message: 'Failed to access file outside workspace', retryable: false } },
   ];
 
   const state = deriveStateFromEvents(events);
   assert.equal(state.agentState, 'error');
   assert.equal(state.errorMessage, 'Failed to access file outside workspace');
+  assert.equal(state.warningMessage, 'Repository indexing reached file limit');
 });
 
-// ──────────────── 3. ImpactPanel Report Rendering & Semantic Mapping ────────────────
+test('event stream correctly handles change.applied and stale state', () => {
+  const staleEvent: RepoPilotEvent = {
+    type: 'change.applied',
+    requestId: 'req-3',
+    result: {
+      requestId: 'req-3',
+      status: 'stale',
+      appliedPaths: [],
+      appliedHunkIds: [],
+      stalePaths: ['src/flask/helpers.py'],
+      message: 'Files modified since proposal',
+    },
+  };
+
+  const state = deriveStateFromEvents([staleEvent]);
+  assert.ok(state.applyResult);
+  assert.equal(state.applyResult.status, 'stale');
+  assert.deepEqual(state.applyResult.stalePaths, ['src/flask/helpers.py']);
+  assert.equal(state.applyResult.appliedPaths.length, 0);
+
+  // Successfully applied event
+  const appliedEvent: RepoPilotEvent = {
+    type: 'change.applied',
+    requestId: 'req-4',
+    result: {
+      requestId: 'req-4',
+      status: 'applied',
+      appliedPaths: ['src/flask/helpers.py'],
+      appliedHunkIds: ['hunk-1'],
+      stalePaths: [],
+    },
+  };
+
+  const appliedState = deriveStateFromEvents([appliedEvent]);
+  assert.ok(appliedState.applyResult);
+  assert.equal(appliedState.applyResult.status, 'applied');
+  assert.equal(appliedState.applyResult.appliedHunkIds.length, 1);
+});
+
+// ──────────────── 3. ImpactPanel Report Rendering & Graph Mapping ────────────────
 
 test('getRiskColors returns semantic light theme palette values', () => {
   const high = getRiskColors('high');
@@ -193,42 +376,28 @@ test('getConfidenceBadge returns correct label and color tokens', () => {
   assert.equal(low.text, '#57606a');
 });
 
-test('ImpactPanel verifies complete sample-report structure and mappings', () => {
-  assert.equal(sampleReport.requestId, 'fixture-mini-flask');
-  assert.equal(sampleReport.changedTargets[0], 'src/flask/helpers.py');
+test('buildImpactFlowGraph transforms sample report into valid React Flow nodes and edges', () => {
+  const { nodes, edges } = buildImpactFlowGraph(sampleReport);
 
-  // Verify node structure & highlights
-  assert.equal(sampleReport.nodes.length, 6);
-  const changedNode = sampleReport.nodes.find((n) => n.highlight === 'changed');
+  // Verify node counts and properties
+  assert.equal(nodes.length, 6);
+  const changedNode = nodes.find((n) => n.id === 'src/flask/helpers.py');
   assert.ok(changedNode);
-  assert.equal(changedNode.id, 'src/flask/helpers.py');
+  assert.equal(changedNode.style?.backgroundColor, '#fbefff'); // Highlighted style for changed target
 
-  const affectedNodes = sampleReport.nodes.filter((n) => n.highlight === 'affected');
-  assert.equal(affectedNodes.length, 5);
+  const highRiskNode = nodes.find((n) => n.id === 'src/flask/app.py');
+  assert.ok(highRiskNode);
+  assert.equal(highRiskNode.style?.backgroundColor, '#ffebe9'); // High risk bg
 
-  // Verify edges and inferred evidence
-  assert.equal(sampleReport.edges.length, 5);
-  const inferredEdge = sampleReport.edges.find((e) => e.evidence === 'inferred');
+  // Verify edges and dashed inferred evidence
+  assert.equal(edges.length, 5);
+  const inferredEdge = edges.find((e) => e.id === 'docs/cli.rst→src/flask/cli.py:references');
   assert.ok(inferredEdge);
-  assert.equal(inferredEdge.source, 'docs/cli.rst');
-  assert.equal(inferredEdge.target, 'src/flask/cli.py');
+  assert.equal(inferredEdge.animated, true);
+  assert.equal(inferredEdge.style?.strokeDasharray, '5,5');
 
-  // Verify affected files list (uncapped)
-  assert.equal(sampleReport.affectedFiles.length, 5);
-  sampleReport.affectedFiles.forEach((file) => {
-    assert.ok(file.path.length > 0);
-    assert.ok(['high', 'medium', 'low'].includes(file.risk));
-    assert.ok(['high', 'medium', 'low'].includes(file.confidence));
-    assert.ok(file.reasons.length > 0);
-    assert.ok(file.relationshipPath.length >= 2);
-  });
-
-  // Verify summary and limitations
-  assert.equal(sampleReport.summary.analysedFiles, 6);
-  assert.equal(sampleReport.summary.affectedCount, 5);
-  assert.equal(sampleReport.summary.high, 3);
-  assert.equal(sampleReport.summary.medium, 1);
-  assert.equal(sampleReport.summary.low, 1);
-  assert.equal(sampleReport.summary.incomplete, false);
-  assert.equal(sampleReport.limitations.length, 4);
+  const observedEdge = edges.find((e) => e.id === 'src/flask/app.py→src/flask/helpers.py:imports');
+  assert.ok(observedEdge);
+  assert.equal(observedEdge.animated, false);
+  assert.equal(observedEdge.style?.strokeDasharray, undefined);
 });

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { useExtensionBridge } from './hooks/useExtensionBridge';
 import {
   ThinkingBar,
@@ -10,14 +10,11 @@ import {
   PromptInput,
   VerificationPanel,
   FeedbackBar,
-  FileUpload,
   ImpactPanel,
   IconSparkles,
-  IconFlask,
-  IconZap,
   IconX,
 } from './components';
-import type { ChangePlan, ImpactReport, VerificationReport } from '../shared/contracts';
+import type { ChangePlan, ImpactReport, VerificationReport, RepoPilotEvent } from '../shared/contracts';
 
 export const App: React.FC = () => {
   const {
@@ -26,6 +23,11 @@ export const App: React.FC = () => {
     currentRequestId,
     agentState,
     errorMessage,
+    warningMessage,
+    streamingDelta,
+    lastApplyResult,
+    lastUndoResult,
+    verificationTests,
     submitInstruction,
     cancelRequest,
     applyHunks,
@@ -33,8 +35,6 @@ export const App: React.FC = () => {
   } = useExtensionBridge();
 
   const [decisions, setDecisions] = useState<Map<string, 'accept' | 'reject'>>(new Map());
-  const [isApplied, setIsApplied] = useState(false);
-  const [uploadedFiles, setUploadedFiles] = useState<Array<{ name: string; size: number; isImage?: boolean }>>([]);
 
   // Derive latest change plan, impact report, and verification report from event stream
   const changePlan = useMemo<ChangePlan | undefined>(() => {
@@ -44,6 +44,11 @@ export const App: React.FC = () => {
     }
     return undefined;
   }, [events]);
+
+  // Clear hunk decisions whenever a new change plan is proposed (review item 8a)
+  useEffect(() => {
+    setDecisions(new Map());
+  }, [changePlan]);
 
   const impactReport = useMemo<ImpactReport | undefined>(() => {
     for (let i = events.length - 1; i >= 0; i--) {
@@ -61,8 +66,9 @@ export const App: React.FC = () => {
     return undefined;
   }, [events]);
 
+  // Strictly typed tool events (review item 8b: no (t as any))
   const toolEvents = useMemo(() => {
-    return events.filter((e) => e.type === 'agent.tool');
+    return events.filter((e): e is Extract<RepoPilotEvent, { type: 'agent.tool' }> => e.type === 'agent.tool');
   }, [events]);
 
   const thinkingSteps: ThinkingStep[] = useMemo(() => {
@@ -79,6 +85,9 @@ export const App: React.FC = () => {
     return steps;
   }, [events]);
 
+  // Application state derived directly from host events (review item 2)
+  const isApplied = lastApplyResult?.status === 'applied' && lastUndoResult?.status !== 'undone';
+
   const handleDecision = (path: string, hunkId: string, decision: 'accept' | 'reject') => {
     setDecisions((prev) => {
       const next = new Map(prev);
@@ -94,28 +103,15 @@ export const App: React.FC = () => {
       const { path, hunkId } = parseDecisionKey(key);
       return { path, hunkId, decision };
     });
+    // Send decisions to host; isApplied updates upon receiving change.applied event
     applyHunks(reqId, decisionList);
-    setIsApplied(true);
   };
 
   const handleUndo = () => {
     if (!currentRequestId && !changePlan) return;
     const reqId = currentRequestId || changePlan?.requestId || '';
+    // Send undo request to host; isApplied updates upon receiving change.undone event
     undoHunks(reqId);
-    setIsApplied(false);
-  };
-
-  const handleFilesSelected = (files: File[]) => {
-    const mapped = files.map((f) => ({
-      name: f.name,
-      size: f.size,
-      isImage: f.type.startsWith('image/'),
-    }));
-    setUploadedFiles((prev) => [...prev, ...mapped]);
-  };
-
-  const handleRemoveFile = (index: number) => {
-    setUploadedFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
   const isRunning = !['idle', 'completed', 'cancelled', 'error'].includes(agentState);
@@ -127,6 +123,8 @@ export const App: React.FC = () => {
       case 'executing':
       case 'planning':
       case 'verifying':
+      case 'retrieving_context':
+      case 'analysing_impact':
         return { bg: '#dafbe1', text: '#1a7f37', border: '#4ac26b' };
       case 'error':
         return { bg: '#ffebe9', text: '#cf222e', border: '#ff8182' };
@@ -182,45 +180,65 @@ export const App: React.FC = () => {
               </p>
             </div>
           </div>
-
-          {/* Quick Action Badges (Impact DAG button removed per review) */}
-          <div className="flex items-center gap-1.5 text-xs font-mono">
-            <button
-              type="button"
-              onClick={() => submitInstruction('/ponytail-review', 'agent')}
-              disabled={isRunning}
-              className="cursor-pointer inline-flex items-center gap-1.5 px-2.5 py-1 rounded border text-[11px] transition disabled:opacity-40"
-              style={{
-                backgroundColor: 'var(--vscode-sideBar-background, #f6f8fa)',
-                borderColor: 'var(--vscode-panel-border, #d0d7de)',
-                color: 'var(--vscode-editor-foreground, #1f2328)',
-              }}
-            >
-              <IconZap size={12} className="text-amber-500" />
-              <span>Review Diff</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => submitInstruction('/verify', 'agent')}
-              disabled={isRunning}
-              className="cursor-pointer inline-flex items-center gap-1.5 px-2.5 py-1 rounded border text-[11px] transition disabled:opacity-40"
-              style={{
-                backgroundColor: 'var(--vscode-sideBar-background, #f6f8fa)',
-                borderColor: 'var(--vscode-panel-border, #d0d7de)',
-                color: 'var(--vscode-editor-foreground, #1f2328)',
-              }}
-            >
-              <IconFlask size={12} className="text-purple-600" />
-              <span>Run Tests</span>
-            </button>
-          </div>
         </header>
 
-        {/* Error Alert */}
+        {/* Error Alert (Host error or agent.error) */}
         {errorMessage && (
           <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs flex items-center gap-2 font-mono shadow-sm">
             <IconX size={14} className="text-red-600 flex-shrink-0" />
             <span>{errorMessage}</span>
+          </div>
+        )}
+
+        {/* Warning Alert (agent.warning) */}
+        {warningMessage && (
+          <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center gap-2 font-mono shadow-sm">
+            <span className="font-bold flex-shrink-0">⚠️ Warning:</span>
+            <span>{warningMessage}</span>
+          </div>
+        )}
+
+        {/* Apply Result Alerts (review item 2) */}
+        {lastApplyResult?.status === 'stale' && (
+          <div className="p-3 rounded-lg bg-amber-50 border border-amber-300 text-amber-800 text-xs font-mono shadow-sm">
+            <div className="font-bold">⚠️ Stale Change Proposal — Nothing Written</div>
+            <div className="mt-1">
+              The following files were modified on disk since the proposal was generated:
+            </div>
+            <ul className="list-disc pl-5 mt-1 font-semibold">
+              {lastApplyResult.stalePaths.map((p) => (
+                <li key={p}>{p}</li>
+              ))}
+            </ul>
+            <div className="mt-1.5 text-[11px] text-amber-700">
+              Please submit a new instruction to generate a fresh diff against the current files.
+            </div>
+          </div>
+        )}
+
+        {lastApplyResult?.status === 'applied' && (
+          <div className="p-2.5 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs font-mono shadow-sm">
+            ✓ Successfully applied {lastApplyResult.appliedHunkIds.length} hunks across {lastApplyResult.appliedPaths.length} files.
+          </div>
+        )}
+
+        {lastApplyResult?.status === 'nothing_to_apply' && (
+          <div className="p-2.5 rounded-lg bg-gray-50 border border-gray-300 text-gray-700 text-xs font-mono shadow-sm">
+            ℹ Nothing was applied (no hunks were accepted).
+          </div>
+        )}
+
+        {lastUndoResult?.status === 'undone' && (
+          <div className="p-2.5 rounded-lg bg-blue-50 border border-blue-300 text-blue-800 text-xs font-mono shadow-sm">
+            ↺ Successfully reverted changes across {lastUndoResult.restoredPaths.join(', ')}.
+          </div>
+        )}
+
+        {/* Streaming Delta Reasoning / Progress */}
+        {streamingDelta && isRunning && (
+          <div className="p-2.5 rounded-lg border text-xs font-mono bg-gray-50 text-gray-700 shadow-sm">
+            <div className="text-[10px] uppercase font-bold text-gray-500 mb-1">Live Output</div>
+            <div className="whitespace-pre-wrap">{streamingDelta}</div>
           </div>
         )}
 
@@ -242,9 +260,9 @@ export const App: React.FC = () => {
             {toolEvents.map((t, i) => (
               <ToolBlock
                 key={i}
-                toolName={(t as any).tool}
-                status={(t as any).status}
-                detail={(t as any).detail}
+                toolName={t.tool}
+                status={t.status}
+                detail={t.detail}
               />
             ))}
           </div>
@@ -270,14 +288,7 @@ export const App: React.FC = () => {
         {/* TestSheriff Verification Panel */}
         <VerificationPanel
           report={verificationReport}
-          isRunning={agentState === 'verifying'}
-        />
-
-        {/* Reference File Uploader */}
-        <FileUpload
-          onFilesSelected={handleFilesSelected}
-          uploadedFiles={uploadedFiles}
-          onRemoveFile={handleRemoveFile}
+          isRunning={agentState === 'verifying' || Boolean(verificationTests && verificationTests.length > 0)}
         />
 
         {/* Prompt Input with Autocomplete & Trigger Chips */}

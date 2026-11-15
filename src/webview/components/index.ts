@@ -4,6 +4,5 @@ export * from './DiffReview';
 export * from './FeedbackBar';
 export * from './PromptInput';
 export * from './VerificationPanel';
-export * from './FileUpload';
 export * from './Icons';
 export * from './ImpactPanel';

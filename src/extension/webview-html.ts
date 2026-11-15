@@ -21,27 +21,10 @@ export function renderWebviewHtml(
 <head>
   <meta charset="UTF-8">
   <meta http-equiv="Content-Security-Policy"
-    content="default-src 'none'; style-src ${cspSource} 'unsafe-inline'; script-src 'nonce-${n}' ${cspSource}; font-src ${cspSource} data:; img-src ${cspSource} data: https:;">
+    content="default-src 'none'; style-src ${cspSource}; script-src 'nonce-${n}' ${cspSource}; font-src ${cspSource} data:; img-src ${cspSource} data:;">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>RepoPilot AI</title>
   ${cssUri ? `<link rel="stylesheet" href="${cssUri}">` : ''}
-  <style nonce="${n}">
-    html, body {
-      margin: 0;
-      padding: 0;
-      width: 100%;
-      height: 100%;
-      font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
-      color: var(--vscode-editor-foreground, #1f2328);
-      background-color: var(--vscode-editor-background, #ffffff);
-    }
-    #root {
-      width: 100%;
-      min-height: 100%;
-    }
-    /* Utility class fallbacks */
-    .font-mono { font-family: var(--vscode-editor-font-family, Consolas, monospace); }
-  </style>
 </head>
 <body>
   <div id="root"></div>
@@ -57,7 +40,7 @@ export function renderPlaceholderHtml(cspSource: string): string {
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy"
-  content="default-src 'none'; style-src ${cspSource} 'nonce-${n}'; script-src 'nonce-${n}';">
+  content="default-src 'none'; style-src 'nonce-${n}'; script-src 'nonce-${n}'; font-src ${cspSource} data:; img-src ${cspSource} data:;">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>RepoPilot AI</title>
 <style nonce="${n}">
