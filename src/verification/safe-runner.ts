@@ -1,10 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { exec } from 'node:child_process';
-import { promisify } from 'node:util';
 import { validateWorkspacePath } from './utils/path-validator';
 import { redactSecrets, sanitizeEnvironment } from './utils/redactor';
-
-const execAsync = promisify(exec);
 
 export interface ExecutionParams {
   workspaceRoot: string;
@@ -26,12 +22,14 @@ export interface ExecutionOutput {
   limitations: string[];
 }
 
+export type ProcessRunner = (params: ExecutionParams) => Promise<ExecutionOutput>;
+
 const MAX_OUTPUT_BYTES = 64 * 1024; // 64 KB
 
 /**
  * Validates the exact command shape permitted by TestSheriff:
  * Executable: python / python3 (or virtualenv path)
- * Arguments: ['-m', 'pytest', ...validatedTestPaths, '-q', '-p', 'no:cacheprovider']
+ * Arguments: ['-m', 'pytest', '-o', 'addopts=', '-p', 'no:cacheprovider', '-q', '-rfE', ...validatedTestPaths]
  * Rejects any arbitrary command strings or non-pytest shapes.
  */
 export function validateCommandArguments(
@@ -63,29 +61,44 @@ export function validateCommandArguments(
     validatedPaths.push(validated);
   }
 
-  // Exactly one command shape: python -m pytest <paths> -q -p no:cacheprovider
-  const args = ['-m', 'pytest', ...validatedPaths, '-q', '-p', 'no:cacheprovider'];
+  // Exactly one command shape: python -m pytest -o addopts= -p no:cacheprovider -q -rfE <paths>
+  const args = ['-m', 'pytest', '-o', 'addopts=', '-p', 'no:cacheprovider', '-q', '-rfE', ...validatedPaths];
   return { validatedPaths, args };
 }
 
 /**
  * Cross-platform process tree termination.
- * On Windows: taskkill /F /T /PID <pid>
+ * On Windows: spawn('taskkill', ['/F', '/T', '/PID', String(pid)], { shell: false })
  * On Linux/macOS: process.kill(-pid, 'SIGKILL') or child.kill('SIGKILL')
  */
 export async function killProcessTree(child: ChildProcess): Promise<void> {
   if (!child.pid) return;
 
   if (process.platform === 'win32') {
-    try {
-      await execAsync(`taskkill /F /T /PID ${child.pid}`);
-    } catch {
+    await new Promise<void>((resolve) => {
       try {
-        child.kill('SIGKILL');
+        const killer = spawn('taskkill', ['/F', '/T', '/PID', String(child.pid)], {
+          shell: false,
+          stdio: 'ignore',
+        });
+        killer.on('close', () => resolve());
+        killer.on('error', () => {
+          try {
+            child.kill('SIGKILL');
+          } catch {
+            // Ignored
+          }
+          resolve();
+        });
       } catch {
-        // Ignored if already terminated
+        try {
+          child.kill('SIGKILL');
+        } catch {
+          // Ignored
+        }
+        resolve();
       }
-    }
+    });
   } else {
     try {
       // If spawned in a new process group, kill negative PID
@@ -111,7 +124,7 @@ export async function executePytest(params: ExecutionParams): Promise<ExecutionO
   // Validate command shape strictly
   const { validatedPaths, args } = validateCommandArguments(testPaths, workspaceRoot);
 
-  const commandLabel = `python -m pytest ${validatedPaths.join(' ')} -q`;
+  const commandLabel = `python -m pytest -o addopts= -p no:cacheprovider -q -rfE ${validatedPaths.join(' ')}`;
   const limitations: string[] = [];
 
   // Check if signal is already aborted
@@ -129,38 +142,15 @@ export async function executePytest(params: ExecutionParams): Promise<ExecutionO
     };
   }
 
-  // Support mock runner hook for reproducible testing across environments without pytest
-  if (process.env.TESTSHERIFF_MOCK_OUTPUT !== undefined) {
-    const mockExit = process.env.TESTSHERIFF_MOCK_EXITCODE !== undefined
-      ? parseInt(process.env.TESTSHERIFF_MOCK_EXITCODE, 10)
-      : 0;
-    const mockTimedOut = process.env.TESTSHERIFF_MOCK_TIMEDOUT === '1';
-    const mockCancelled = process.env.TESTSHERIFF_MOCK_CANCELLED === '1';
-
-    return {
-      commandLabel,
-      exitCode: mockTimedOut || mockCancelled ? null : mockExit,
-      durationMs: 42,
-      stdout: redactSecrets(process.env.TESTSHERIFF_MOCK_OUTPUT),
-      stderr: redactSecrets(process.env.TESTSHERIFF_MOCK_STDERR || ''),
-      timedOut: mockTimedOut,
-      cancelled: mockCancelled,
-      truncated: false,
-      limitations: mockTimedOut
-        ? [`Test execution timed out after ${timeoutMs}ms and was terminated.`]
-        : mockCancelled
-        ? ['Verification was cancelled via AbortSignal.']
-        : [],
-    };
-  }
-
   const startTime = Date.now();
   let timedOut = false;
   let cancelled = false;
   let truncated = false;
 
-  let stdoutBuffer = '';
-  let stderrBuffer = '';
+  let stdoutBytes = 0;
+  let stderrBytes = 0;
+  const stdoutChunks: Buffer[] = [];
+  const stderrChunks: Buffer[] = [];
 
   // Clean environment: sanitize secrets + prevent writing .pyc files
   const safeEnv: NodeJS.ProcessEnv = {
@@ -185,6 +175,15 @@ export async function executePytest(params: ExecutionParams): Promise<ExecutionO
       }
     };
 
+    const getCappedString = (chunks: Buffer[]): string => {
+      if (chunks.length === 0) return '';
+      const full = Buffer.concat(chunks);
+      if (full.length > MAX_OUTPUT_BYTES) {
+        return full.subarray(full.length - MAX_OUTPUT_BYTES).toString('utf-8');
+      }
+      return full.toString('utf-8');
+    };
+
     const abortHandler = async () => {
       if (finished) return;
       cancelled = true;
@@ -195,8 +194,8 @@ export async function executePytest(params: ExecutionParams): Promise<ExecutionO
         commandLabel,
         exitCode: null,
         durationMs: Date.now() - startTime,
-        stdout: redactSecrets(stdoutBuffer),
-        stderr: redactSecrets(stderrBuffer),
+        stdout: redactSecrets(getCappedString(stdoutChunks)),
+        stderr: redactSecrets(getCappedString(stderrChunks)),
         timedOut: false,
         cancelled: true,
         truncated,
@@ -242,8 +241,8 @@ export async function executePytest(params: ExecutionParams): Promise<ExecutionO
         commandLabel,
         exitCode: null,
         durationMs: Date.now() - startTime,
-        stdout: redactSecrets(stdoutBuffer),
-        stderr: redactSecrets(stderrBuffer),
+        stdout: redactSecrets(getCappedString(stdoutChunks)),
+        stderr: redactSecrets(getCappedString(stderrChunks)),
         timedOut: true,
         cancelled: false,
         truncated,
@@ -252,21 +251,19 @@ export async function executePytest(params: ExecutionParams): Promise<ExecutionO
     }, timeoutMs);
 
     child.stdout?.on('data', (chunk: Buffer) => {
-      if (stdoutBuffer.length + chunk.length > MAX_OUTPUT_BYTES) {
+      stdoutBytes += chunk.length;
+      if (stdoutBytes > MAX_OUTPUT_BYTES) {
         truncated = true;
-        stdoutBuffer = (stdoutBuffer + chunk.toString('utf-8')).slice(-MAX_OUTPUT_BYTES);
-      } else {
-        stdoutBuffer += chunk.toString('utf-8');
       }
+      stdoutChunks.push(chunk);
     });
 
     child.stderr?.on('data', (chunk: Buffer) => {
-      if (stderrBuffer.length + chunk.length > MAX_OUTPUT_BYTES) {
+      stderrBytes += chunk.length;
+      if (stderrBytes > MAX_OUTPUT_BYTES) {
         truncated = true;
-        stderrBuffer = (stderrBuffer + chunk.toString('utf-8')).slice(-MAX_OUTPUT_BYTES);
-      } else {
-        stderrBuffer += chunk.toString('utf-8');
       }
+      stderrChunks.push(chunk);
     });
 
     child.on('error', (err) => {
@@ -277,8 +274,8 @@ export async function executePytest(params: ExecutionParams): Promise<ExecutionO
         commandLabel,
         exitCode: null,
         durationMs: Date.now() - startTime,
-        stdout: redactSecrets(stdoutBuffer),
-        stderr: redactSecrets(stderrBuffer),
+        stdout: redactSecrets(getCappedString(stdoutChunks)),
+        stderr: redactSecrets(getCappedString(stderrChunks)),
         timedOut: false,
         cancelled: false,
         truncated,
@@ -298,8 +295,8 @@ export async function executePytest(params: ExecutionParams): Promise<ExecutionO
         commandLabel,
         exitCode: code,
         durationMs: Date.now() - startTime,
-        stdout: redactSecrets(stdoutBuffer),
-        stderr: redactSecrets(stderrBuffer),
+        stdout: redactSecrets(getCappedString(stdoutChunks)),
+        stderr: redactSecrets(getCappedString(stderrChunks)),
         timedOut: false,
         cancelled: false,
         truncated,

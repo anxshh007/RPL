@@ -4,11 +4,40 @@
  */
 
 import type { VerificationService } from '../shared/contracts';
-import { VerificationServiceImpl, notRunReport } from './verification-service';
+import {
+  VerificationServiceImpl,
+  notRunReport,
+  type VerificationServiceOptions,
+} from './verification-service';
+import type { ProcessRunner } from './safe-runner';
 
-export function createVerificationService(workspaceRoot?: string): VerificationService {
-  return new VerificationServiceImpl(workspaceRoot);
+export function createVerificationService(
+  workspaceRoot: string,
+  options?: VerificationServiceOptions
+): VerificationService;
+export function createVerificationService(
+  options: { workspaceRoot: string; runProcess?: ProcessRunner }
+): VerificationService;
+export function createVerificationService(
+  workspaceRootOrOptions?: string | { workspaceRoot?: string; runProcess?: ProcessRunner },
+  options?: VerificationServiceOptions
+): VerificationService;
+export function createVerificationService(
+  workspaceRootOrOptions?: string | { workspaceRoot?: string; runProcess?: ProcessRunner },
+  options?: VerificationServiceOptions
+): VerificationService {
+  if (typeof workspaceRootOrOptions === 'object' && workspaceRootOrOptions !== null) {
+    return new VerificationServiceImpl(workspaceRootOrOptions.workspaceRoot, {
+      runProcess: workspaceRootOrOptions.runProcess ?? options?.runProcess,
+    });
+  }
+  return new VerificationServiceImpl(workspaceRootOrOptions, options);
 }
 
-export { VerificationServiceImpl, notRunReport };
+export {
+  VerificationServiceImpl,
+  notRunReport,
+  type VerificationServiceOptions,
+  type ProcessRunner,
+};
 export * from './tools';

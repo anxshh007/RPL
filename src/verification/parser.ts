@@ -141,25 +141,65 @@ export function parsePytestOutput(params: {
     }
   }
 
-  // If exit code indicates failure but no summary was printed (e.g. crash)
-  if (exitCode !== 0 && !hasSummary) {
-    return {
-      status: 'error',
-      counts: { total: null, passed: null, failed: null, skipped: null, errors: null },
-      parsingComplete: false,
-      failures: [{
-        testName: 'pytest_execution',
-        message: `Process exited with error code ${exitCode}. Output: ${combined.slice(0, 500).trim()}`,
-      }],
-      limitations: ['Pytest output did not produce a recognizable summary line; counts marked unknown.'],
-    };
+  // If no summary was found, use exit code mapping per AGENTS.md honesty rules:
+  // 0 = passed, 1 = failed (counts null), 5 = no tests collected -> not_run
+  if (!hasSummary) {
+    const counts: TestCounts = { total: null, passed: null, failed: null, skipped: null, errors: null };
+    if (exitCode === 0) {
+      return {
+        status: 'passed',
+        counts,
+        parsingComplete: false,
+        failures: [],
+        limitations: [
+          ...limitations,
+          'Pytest completed with exit code 0 but no summary line was found; counts marked null.',
+        ],
+      };
+    } else if (exitCode === 1) {
+      return {
+        status: 'failed',
+        counts,
+        parsingComplete: false,
+        failures: failures.length > 0 ? failures : [{
+          testName: 'pytest_execution',
+          message: `Tests failed with exit code 1. Output: ${combined.slice(0, 500).trim()}`,
+        }],
+        limitations: [
+          ...limitations,
+          'Pytest exited with status 1 (tests failed) but no summary line was found; counts marked null.',
+        ],
+      };
+    } else if (exitCode === 5) {
+      return {
+        status: 'not_run',
+        counts,
+        parsingComplete: false,
+        failures: [],
+        limitations: [
+          ...limitations,
+          'Pytest exit code 5: no tests were collected.',
+        ],
+      };
+    } else {
+      return {
+        status: 'error',
+        counts,
+        parsingComplete: false,
+        failures: failures.length > 0 ? failures : [{
+          testName: 'pytest_execution',
+          message: `Process exited with error code ${exitCode}. Output: ${combined.slice(0, 500).trim()}`,
+        }],
+        limitations: [
+          ...limitations,
+          `Pytest exited with error code ${exitCode} and no summary line was produced.`,
+        ],
+      };
+    }
   }
 
   const total = passed + failed + skipped + errors;
-
-  const counts: TestCounts = hasSummary
-    ? { total, passed, failed, skipped, errors }
-    : { total: null, passed: null, failed: null, skipped: null, errors: null };
+  const counts: TestCounts = { total, passed, failed, skipped, errors };
 
   let status: VerificationStatus = 'passed';
   if (errors > 0) {
@@ -173,7 +213,7 @@ export function parsePytestOutput(params: {
   return {
     status,
     counts,
-    parsingComplete: hasSummary,
+    parsingComplete: true,
     failures,
     limitations,
   };

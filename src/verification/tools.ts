@@ -1,47 +1,75 @@
 /**
  * Plain MCP tool handlers for TestSheriff (Member 4).
- * Exported here and registered by Member 1 in src/mcp/ (docs/DECISIONS.md D-07).
+ * Handlers wrap the shared VerificationService instance and return
+ * { ok: true, value } | { ok: false, error: SafeError } without throwing.
  */
 
-import type { TestCandidate, TestRunRequest, VerificationReport } from '../shared/contracts';
-import { VerificationServiceImpl } from './verification-service';
+import type {
+  SafeError,
+  TestCandidate,
+  TestRunRequest,
+  VerificationReport,
+  VerificationService,
+} from '../shared/contracts';
+import { toSafeError } from '../shared/contracts';
+import type { VerificationServiceImpl } from './verification-service';
 
-// Shared service instance
-const defaultService = new VerificationServiceImpl();
+export interface VerificationToolHandlers {
+  discover_tests(args: {
+    changedFiles?: string[];
+    candidateTests?: TestCandidate[];
+  }): Promise<{ ok: true; value: TestCandidate[] } | { ok: false; error: SafeError }>;
 
-/**
- * Handler for discover_tests MCP tool.
- * Discovers candidate tests for a given list of changed files.
- */
-export async function discover_tests(args: {
-  changedFiles?: string[];
-  candidateTests?: TestCandidate[];
-}): Promise<TestCandidate[]> {
-  const changedFiles = args?.changedFiles ?? [];
-  const candidateTests = args?.candidateTests ?? [];
-  return defaultService.discoverTests(changedFiles, candidateTests);
+  run_tests(
+    request: TestRunRequest,
+    signal?: AbortSignal
+  ): Promise<{ ok: true; value: VerificationReport } | { ok: false; error: SafeError }>;
+
+  get_test_results(args: {
+    requestId: string;
+  }): Promise<{ ok: true; value: VerificationReport | null } | { ok: false; error: SafeError }>;
 }
 
 /**
- * Handler for run_tests MCP tool.
- * Executes relevant tests safely through pytest with timeout and AbortSignal support.
+ * Creates MCP tool handlers bound to the provided VerificationService instance.
+ * Shares the central agent's service instance so cached reports are accessible.
  */
-export async function run_tests(
-  request: TestRunRequest,
-  signal?: AbortSignal
-): Promise<VerificationReport> {
-  return defaultService.verify(request, signal);
-}
+export function createVerificationToolHandlers(service: VerificationService): VerificationToolHandlers {
+  return {
+    async discover_tests(args: {
+      changedFiles?: string[];
+      candidateTests?: TestCandidate[];
+    }) {
+      try {
+        const changedFiles = args?.changedFiles ?? [];
+        const candidateTests = args?.candidateTests ?? [];
+        const value = await service.discoverTests(changedFiles, candidateTests);
+        return { ok: true, value };
+      } catch (err) {
+        return { ok: false, error: toSafeError(err) };
+      }
+    },
 
-/**
- * Handler for get_test_results MCP tool.
- * Retrieves in-memory cached VerificationReport by requestId.
- */
-export async function get_test_results(args: {
-  requestId: string;
-}): Promise<VerificationReport | null> {
-  if (!args || !args.requestId) {
-    return null;
-  }
-  return defaultService.getReport(args.requestId) ?? null;
+    async run_tests(request: TestRunRequest, signal?: AbortSignal) {
+      try {
+        const value = await service.verify(request, signal);
+        return { ok: true, value };
+      } catch (err) {
+        return { ok: false, error: toSafeError(err) };
+      }
+    },
+
+    async get_test_results(args: { requestId: string }) {
+      try {
+        if (!args || !args.requestId) {
+          return { ok: true, value: null };
+        }
+        const svc = service as VerificationServiceImpl;
+        const report = typeof svc.getReport === 'function' ? svc.getReport(args.requestId) ?? null : null;
+        return { ok: true, value: report };
+      } catch (err) {
+        return { ok: false, error: toSafeError(err) };
+      }
+    },
+  };
 }

@@ -1,7 +1,7 @@
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
 import type { TestCandidate } from '../shared/contracts';
-import { normalizePosixPath } from './utils/path-validator';
+import { normalizePosixPath, validateWorkspacePath } from './utils/path-validator';
 import { findTestFiles } from './discovery';
 
 export interface SelectedTestItem {
@@ -78,14 +78,32 @@ export async function selectRelevantTests(params: {
   });
 
   for (const candidate of sortedCandidates) {
-    const norm = normalizePosixPath(candidate.path);
-    if (!selectedMap.has(norm)) {
+    if (!candidate || typeof candidate.path !== 'string') {
+      limitations.push('Dropped candidate with missing or non-string path.');
+      continue;
+    }
+
+    let validRelPath: string;
+    try {
+      validRelPath = validateWorkspacePath(workspaceRoot, candidate.path);
+    } catch (err) {
+      limitations.push(`Dropped candidate "${candidate.path}": ${(err as Error).message}`);
+      continue;
+    }
+
+    const exists = await fileExistsInWorkspace(workspaceRoot, validRelPath);
+    if (!exists) {
+      limitations.push(`Dropped candidate "${candidate.path}": test file does not exist in workspace.`);
+      continue;
+    }
+
+    if (!selectedMap.has(validRelPath)) {
       const reason = candidate.confidence === 'low'
         ? `${candidate.reason} (inferred)`
         : candidate.reason;
-      selectedMap.set(norm, { path: norm, reason });
+      selectedMap.set(validRelPath, { path: validRelPath, reason });
       candidatesAccumulator.push({
-        path: norm,
+        path: validRelPath,
         reason,
         source: candidate.source,
         confidence: candidate.confidence,
@@ -95,22 +113,37 @@ export async function selectRelevantTests(params: {
 
   // Tier 3: Naming convention match for changed files
   for (const changedFile of changedFiles) {
-    const normChanged = normalizePosixPath(changedFile);
+    if (!changedFile || typeof changedFile !== 'string') {
+      continue;
+    }
 
-    // If changedFile is itself a test file, select it directly
+    let normChanged: string;
+    try {
+      normChanged = validateWorkspacePath(workspaceRoot, changedFile);
+    } catch {
+      try {
+        normChanged = normalizePosixPath(changedFile);
+      } catch {
+        continue;
+      }
+    }
+
+    // If changedFile is itself a test file, select it directly if it exists
     if (
       (normChanged.startsWith('tests/') || normChanged.startsWith('test/')) &&
       (normChanged.includes('test_') || normChanged.endsWith('_test.py'))
     ) {
-      if (!selectedMap.has(normChanged)) {
-        const reason = `Direct test modification: ${normChanged}`;
-        selectedMap.set(normChanged, { path: normChanged, reason });
-        candidatesAccumulator.push({
-          path: normChanged,
-          reason,
-          source: 'convention',
-          confidence: 'high',
-        });
+      if (await fileExistsInWorkspace(workspaceRoot, normChanged)) {
+        if (!selectedMap.has(normChanged)) {
+          const reason = `Direct test modification: ${normChanged}`;
+          selectedMap.set(normChanged, { path: normChanged, reason });
+          candidatesAccumulator.push({
+            path: normChanged,
+            reason,
+            source: 'convention',
+            confidence: 'high',
+          });
+        }
       }
       continue;
     }

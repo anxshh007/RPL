@@ -40,11 +40,19 @@ export function validateWorkspacePath(workspaceRoot: string, targetPath: string)
     }
   }
 
+  // Reject absolute paths upfront (AGENTS.md Rule 8: workspace-relative only)
+  if (
+    path.isAbsolute(trimmed) ||
+    /^[a-zA-Z]:[/\\]/.test(trimmed) ||
+    trimmed.startsWith('/') ||
+    trimmed.startsWith('\\')
+  ) {
+    throw new SecurityPathError(`Absolute paths are prohibited; paths must be workspace-relative only: ${targetPath}`, targetPath);
+  }
+
   // Resolve absolute paths against workspaceRoot
   const resolvedRoot = path.resolve(workspaceRoot);
-  const resolvedTarget = path.isAbsolute(trimmed)
-    ? path.resolve(trimmed)
-    : path.resolve(resolvedRoot, trimmed);
+  const resolvedTarget = path.resolve(resolvedRoot, trimmed);
 
   const relative = path.relative(resolvedRoot, resolvedTarget);
 
