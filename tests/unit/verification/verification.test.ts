@@ -462,6 +462,34 @@ test('live execution: AbortSignal immediately cancels execution', async () => {
   assert.ok(report.limitations.some((l) => l.includes('cancelled')));
 });
 
+test('live execution: mid-flight AbortSignal after process starts reports status "cancelled" with exitCode null', async (t) => {
+  if (!hasLocalPytest) {
+    t.skip('pytest not installed in environment');
+    return;
+  }
+
+  const service = createVerificationService(fixtureRoot);
+  const controller = new AbortController();
+
+  // Cancel 500 ms into execution while pytest is actively running the full fixture suite
+  const timer = setTimeout(() => {
+    controller.abort();
+  }, 500);
+
+  const report = await service.verify({
+    requestId: 'req-midflight-cancel',
+    changedFiles: ['src/unknown_module.py'],
+    candidateTests: [],
+  }, controller.signal);
+
+  clearTimeout(timer);
+
+  assert.equal(report.status, 'cancelled');
+  assert.equal(report.exitCode, null);
+  assert.deepEqual(report.counts, { total: null, passed: null, failed: null, skipped: null, errors: null });
+  assert.ok(report.limitations.some((l) => l.toLowerCase().includes('cancelled')));
+});
+
 test('MCP tool handlers: createVerificationToolHandlers shares service and returns { ok, value }', async () => {
   const customRunner: ProcessRunner = async () => ({
     commandLabel: 'pytest',

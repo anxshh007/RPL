@@ -184,11 +184,11 @@ export async function executePytest(params: ExecutionParams): Promise<ExecutionO
       return full.toString('utf-8');
     };
 
-    const abortHandler = async () => {
+    const abortHandler = () => {
       if (finished) return;
+      finished = true;
       cancelled = true;
       limitations.push('Verification was cancelled via AbortSignal.');
-      await killProcessTree(child);
       cleanup();
       resolve({
         commandLabel,
@@ -201,6 +201,7 @@ export async function executePytest(params: ExecutionParams): Promise<ExecutionO
         truncated,
         limitations,
       });
+      void killProcessTree(child);
     };
 
     if (signal) {
@@ -231,11 +232,11 @@ export async function executePytest(params: ExecutionParams): Promise<ExecutionO
     }
 
     // Set timeout timer
-    timer = setTimeout(async () => {
+    timer = setTimeout(() => {
       if (finished) return;
+      finished = true;
       timedOut = true;
       limitations.push(`Test execution timed out after ${timeoutMs}ms and was terminated.`);
-      await killProcessTree(child);
       cleanup();
       resolve({
         commandLabel,
@@ -248,6 +249,7 @@ export async function executePytest(params: ExecutionParams): Promise<ExecutionO
         truncated,
         limitations,
       });
+      void killProcessTree(child);
     }, timeoutMs);
 
     child.stdout?.on('data', (chunk: Buffer) => {
@@ -267,7 +269,8 @@ export async function executePytest(params: ExecutionParams): Promise<ExecutionO
     });
 
     child.on('error', (err) => {
-      if (finished) return;
+      if (finished || cancelled || timedOut) return;
+      finished = true;
       cleanup();
       limitations.push(`Process error: ${err.message}`);
       resolve({
@@ -284,7 +287,8 @@ export async function executePytest(params: ExecutionParams): Promise<ExecutionO
     });
 
     child.on('close', (code) => {
-      if (finished) return;
+      if (finished || cancelled || timedOut) return;
+      finished = true;
       cleanup();
 
       if (truncated) {
