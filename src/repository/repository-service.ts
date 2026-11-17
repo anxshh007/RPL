@@ -1,3 +1,4 @@
+
 import path from 'node:path';
 import type {
   ChangeRequest,
@@ -16,7 +17,11 @@ import {
   type ContextRankingWeights,
   type RankedContextCandidate,
 } from './context-ranker';
-import { estimateContextTokens, fitContextToBudget } from './context-budget';
+import {
+  estimateContextTokens,
+  fitContextToBudget,
+  normalizeContextTokenBudget,
+} from './context-budget';
 import { parseRepositoryMentions } from './mention-parser';
 import { indexWorkspacePythonFiles } from './python-symbol-index';
 import { listWorkspaceFiles } from './workspace-scanner';
@@ -51,7 +56,6 @@ const MAX_CONTEXT_CANDIDATES = 150;
 const MAX_CONTEXT_SYMBOLS = 100;
 const MAX_CONTEXT_DEPENDENCIES = 200;
 const MAX_CONTEXT_UNRESOLVED_IMPORTS = 100;
-const DEFAULT_TOKEN_BUDGET = 16000;
 
 const SOURCE_PRIORITY: Record<ContextRankingSignal, ContextSource> = {
   explicitFile: 'explicit_mention',
@@ -171,7 +175,10 @@ async function buildExcerpts(
   const excerpts: ContextFile['excerpts'] = [];
   for (const snippet of snippets) {
     let startLine = Math.max(1, snippet.line - EXCERPT_CONTEXT_LINES);
-    let endLine = Math.min(startLine + MAX_EXCERPT_LINES - 1, snippet.line + EXCERPT_CONTEXT_LINES);
+    let endLine = Math.min(
+      startLine + MAX_EXCERPT_LINES - 1,
+      snippet.line + EXCERPT_CONTEXT_LINES,
+    );
     let text = '';
 
     if (activeSelection && candidate.signals.has('activeSelection')) {
@@ -199,7 +206,12 @@ async function buildExcerpts(
   }
 
   if (excerpts.length === 0) {
-    const text = await readWorkspaceFile(workspaceRoot, candidate.path, 1, MAX_EXCERPT_LINES);
+    const text = await readWorkspaceFile(
+      workspaceRoot,
+      candidate.path,
+      1,
+      MAX_EXCERPT_LINES,
+    );
     if (text.trim()) {
       excerpts.push({ startLine: 1, endLine: MAX_EXCERPT_LINES, text });
     }
@@ -208,7 +220,8 @@ async function buildExcerpts(
   const unique = new Map<string, ContextFile['excerpts'][number]>();
   for (const excerpt of excerpts) {
     const overlapping = [...unique.entries()].find(([, existing]) =>
-      excerpt.startLine <= existing.endLine && existing.startLine <= excerpt.endLine,
+      excerpt.startLine <= existing.endLine &&
+      existing.startLine <= excerpt.endLine,
     );
     if (!overlapping) {
       unique.set(`${excerpt.startLine}:${excerpt.endLine}`, excerpt);
@@ -217,7 +230,9 @@ async function buildExcerpts(
     const [key, existing] = overlapping;
     if (excerpt.text.length > existing.text.length) unique.set(key, excerpt);
   }
-  return [...unique.values()].sort((left, right) => left.startLine - right.startLine);
+  return [...unique.values()].sort(
+    (left, right) => left.startLine - right.startLine,
+  );
 }
 
 function throwIfAborted(signal?: AbortSignal): void {
@@ -228,6 +243,59 @@ function throwIfAborted(signal?: AbortSignal): void {
   }
 }
 
+/**
+ * Returns dependency edges inside the two-hop dependant neighbourhood
+ * of the supplied root files.
+ *
+ * An edge A -> B means A depends on B.
+ * Therefore, to find dependants of a root, traverse edges where
+ * edge.to belongs to the current frontier and add edge.from.
+ */
+export function getTwoHopDependantEdges(
+  dependencyEdges: DependencyEdge[],
+  roots: Set<string>,
+): { edges: DependencyEdge[]; omittedCount: number } {
+  let frontier = new Set(roots);
+  const visited = new Set(roots);
+  const edgeDistances = new Map<string, { edge: DependencyEdge; hop: number }>();
+
+  for (let hop = 1; hop <= 2 && frontier.size > 0; hop += 1) {
+    const nextFrontier = new Set<string>();
+
+    for (const edge of dependencyEdges) {
+      if (!frontier.has(edge.to)) continue;
+
+      const key = `${edge.from}\0${edge.to}\0${edge.kind}\0${edge.evidence}`;
+      const existing = edgeDistances.get(key);
+      if (!existing || hop < existing.hop) {
+        edgeDistances.set(key, { edge, hop });
+      }
+      if (!visited.has(edge.from)) nextFrontier.add(edge.from);
+    }
+
+    for (const file of nextFrontier) visited.add(file);
+    frontier = nextFrontier;
+  }
+
+  const prioritizedEdges = [...edgeDistances.values()].sort(
+    (left, right) =>
+      left.hop - right.hop ||
+      left.edge.from.localeCompare(right.edge.from) ||
+      left.edge.to.localeCompare(right.edge.to) ||
+      left.edge.kind.localeCompare(right.edge.kind) ||
+      left.edge.evidence.localeCompare(right.edge.evidence),
+  );
+  return {
+    edges: prioritizedEdges
+      .slice(0, MAX_CONTEXT_DEPENDENCIES)
+      .map(({ edge }) => edge),
+    omittedCount: Math.max(
+      0,
+      prioritizedEdges.length - MAX_CONTEXT_DEPENDENCIES,
+    ),
+  };
+}
+
 export async function assembleRepositoryContext(
   workspaceRoot: string,
   request: ChangeRequest,
@@ -235,12 +303,15 @@ export async function assembleRepositoryContext(
   signal?: AbortSignal,
 ): Promise<RepositoryContext> {
   throwIfAborted(signal);
+
   const weights: ContextRankingWeights = {
     ...DEFAULT_CONTEXT_RANKING_WEIGHTS,
     ...options.rankingWeights,
   };
+
   const scan = await listWorkspaceFiles(workspaceRoot);
   const availableFiles = new Set(scan.files);
+
   const mentions = parseRepositoryMentions(
     request.explicitFileMentions,
     request.explicitSymbolMentions,
@@ -248,45 +319,47 @@ export async function assembleRepositoryContext(
     scan.files,
     request.activeFile,
   );
+
   const candidates = new Map<string, CandidateData>();
   const warnings = [...scan.warnings, ...mentions.warnings];
   const explicitPaths = new Set(mentions.fileMentions);
   const resolvedExplicitSymbols: SymbolRecord[] = [];
 
-  let effectiveBudget = options.tokenBudget;
-  if (!Number.isInteger(effectiveBudget) || effectiveBudget < 1 || effectiveBudget > 20000) {
-    const clamped = Math.max(
-      1,
-      Math.min(20000, Math.round(Number.isFinite(effectiveBudget) ? effectiveBudget : DEFAULT_TOKEN_BUDGET)),
-    );
-    warnings.push(
-      `Context token budget ${effectiveBudget} is out of range (1-20000); clamped to ${clamped}.`,
-    );
-    effectiveBudget = clamped;
-  }
+  const normalizedBudget = normalizeContextTokenBudget(options.tokenBudget);
+  const effectiveBudget = normalizedBudget.tokenBudget;
+  if (normalizedBudget.warning) warnings.push(normalizedBudget.warning);
 
   for (const file of mentions.fileMentions) {
     addCandidate(candidates, file, 'explicitFile', weights.explicitFile);
   }
 
-  let activeSelection: { startLine: number; endLine: number; text?: string } | undefined;
+  let activeSelection:
+    | { startLine: number; endLine: number; text?: string }
+    | undefined;
+  let activeFilePath: string | undefined;
+
   if (request.activeFile) {
     try {
       const activeFile = normalizeWorkspacePath(request.activeFile);
+      activeFilePath = activeFile;
+
       if (availableFiles.has(activeFile)) {
         explicitPaths.add(activeFile);
+
         const candidate = addCandidate(
           candidates,
           activeFile,
           'activeSelection',
           weights.activeSelection,
         );
+
         if (request.selectionRange) {
           activeSelection = {
             startLine: request.selectionRange.startLine,
             endLine: request.selectionRange.endLine,
             text: request.selectedText,
           };
+
           if (request.selectedText) {
             candidate.snippets.push({
               path: activeFile,
@@ -299,12 +372,14 @@ export async function assembleRepositoryContext(
           const lineIndex = content.split(/\r?\n/).findIndex((line) =>
             line.includes(request.selectedText ?? ''),
           );
+
           if (lineIndex >= 0) {
             activeSelection = {
               startLine: lineIndex + 1,
               endLine: lineIndex + 1,
               text: request.selectedText,
             };
+
             candidate.snippets.push({
               path: activeFile,
               line: lineIndex + 1,
@@ -313,7 +388,9 @@ export async function assembleRepositoryContext(
           }
         }
       } else {
-        warnings.push(`Active file is not in the scanned workspace: ${activeFile}`);
+        warnings.push(
+          `Active file is not in the scanned workspace: ${activeFile}`,
+        );
       }
     } catch {
       warnings.push('Active file path is invalid or unsafe.');
@@ -321,21 +398,27 @@ export async function assembleRepositoryContext(
   }
 
   throwIfAborted(signal);
+
   const pythonIndex = await indexWorkspacePythonFiles(workspaceRoot);
   warnings.push(...pythonIndex.warnings);
+
   const allSymbols = pythonIndex.files.flatMap((file) => file.symbols);
   const allDependencies = await analyzePythonDependencies(workspaceRoot);
+
   warnings.push(...allDependencies.warnings);
 
   for (const name of mentions.symbolMentions) {
     const matches = allSymbols.filter((symbol) => symbol.name === name);
+
     if (matches.length === 0) {
       warnings.push(`Explicit symbol mention could not be resolved: ${name}`);
       continue;
     }
+
     for (const symbol of matches) {
       resolvedExplicitSymbols.push(symbol);
       explicitPaths.add(symbol.file);
+
       const candidate = addCandidate(
         candidates,
         symbol.file,
@@ -343,6 +426,7 @@ export async function assembleRepositoryContext(
         weights.explicitSymbol,
         `Explicit symbol @${name} found at line ${symbol.startLine}.`,
       );
+
       addSnippet(candidate, {
         path: symbol.file,
         line: symbol.startLine,
@@ -352,9 +436,13 @@ export async function assembleRepositoryContext(
   }
 
   const instructionTerms = getInstructionTerms(request.instruction);
+
   for (const file of scan.files) {
     const filename = path.posix.basename(file).toLowerCase();
-    const matches = instructionTerms.filter((term) => filename.includes(term));
+    const matches = instructionTerms.filter((term) =>
+      filename.includes(term),
+    );
+
     if (matches.length > 0) {
       addCandidate(
         candidates,
@@ -368,6 +456,7 @@ export async function assembleRepositoryContext(
 
   for (const term of instructionTerms) {
     throwIfAborted(signal);
+
     try {
       const results = await searchWorkspace(
         workspaceRoot,
@@ -376,6 +465,7 @@ export async function assembleRepositoryContext(
         MAX_RESULTS_PER_TERM,
         { maxDurationMs: 2000, maxExcerptLength: 300 },
       );
+
       for (const result of results) {
         const candidate = addCandidate(
           candidates,
@@ -384,16 +474,21 @@ export async function assembleRepositoryContext(
           weights.textMatch,
           `Source text matches instruction term "${term}".`,
         );
+
         addSnippet(candidate, result);
       }
     } catch {
-      warnings.push(`Text search was incomplete for instruction term "${term}".`);
+      warnings.push(
+        `Text search was incomplete for instruction term "${term}".`,
+      );
     }
   }
 
   const normalizedTermSet = new Set(instructionTerms);
+
   for (const symbol of allSymbols) {
     const normalizedName = symbol.name.toLowerCase();
+
     if (normalizedTermSet.has(normalizedName)) {
       const candidate = addCandidate(
         candidates,
@@ -402,6 +497,7 @@ export async function assembleRepositoryContext(
         weights.exactSymbol,
         `Exact symbol match "${symbol.name}" at line ${symbol.startLine}.`,
       );
+
       addSnippet(candidate, {
         path: symbol.file,
         line: symbol.startLine,
@@ -411,10 +507,13 @@ export async function assembleRepositoryContext(
   }
 
   const seedFiles = new Set(candidates.keys());
+
   for (const edge of allDependencies.dependencyEdges) {
     if (!seedFiles.has(edge.from) && !seedFiles.has(edge.to)) continue;
+
     const related = seedFiles.has(edge.from) ? edge.to : edge.from;
     if (!availableFiles.has(related)) continue;
+
     addCandidate(
       candidates,
       related,
@@ -427,36 +526,61 @@ export async function assembleRepositoryContext(
   for (const file of scan.files) {
     const testFile = pathLooksLikeTest(file);
     const documentationFile = pathLooksLikeDocumentation(file);
+
     if (!testFile && !documentationFile) continue;
 
     const fileTerms = new Set(getPathTerms(path.posix.basename(file)));
+
     const relatedCandidates = [...candidates.values()].filter((candidate) => {
       if (candidate.path === file) return false;
-      const candidateTerms = getPathTerms(path.posix.basename(candidate.path));
-      const codeCandidate = !pathLooksLikeTest(candidate.path) &&
+
+      const candidateTerms = getPathTerms(
+        path.posix.basename(candidate.path),
+      );
+
+      const codeCandidate =
+        !pathLooksLikeTest(candidate.path) &&
         !pathLooksLikeDocumentation(candidate.path);
+
       return codeCandidate &&
-        (getSharedNameTerms(fileTerms, candidateTerms).length > 0 ||
-          [...normalizedTermSet].some((term) => fileTerms.has(term) || candidateTerms.includes(term)));
+        (
+          getSharedNameTerms(fileTerms, candidateTerms).length > 0 ||
+          [...normalizedTermSet].some(
+            (term) =>
+              fileTerms.has(term) || candidateTerms.includes(term),
+          )
+        );
     });
-    const textEvidence = candidates.get(file)?.signals.has('textMatch') ?? false;
+
+    const textEvidence =
+      candidates.get(file)?.signals.has('textMatch') ?? false;
+
     if (relatedCandidates.length === 0 && !textEvidence) continue;
 
     const sourceEvidence = allDependencies.dependencyEdges.some((edge) =>
       testFile
-        ? edge.kind === 'tests' && (edge.from === file || edge.to === file)
+        ? edge.kind === 'tests' &&
+          (edge.from === file || edge.to === file)
         : edge.from === file || edge.to === file,
     );
+
     const nameMatch = relatedCandidates.some((candidate) => {
       const fileName = path.posix.basename(file).toLowerCase();
       const candidateName = path.posix.basename(candidate.path).toLowerCase();
-      return fileName.includes(candidateName.replace(/\.[^.]+$/, '')) ||
-        candidateName.includes(fileName.replace(/\.[^.]+$/, ''));
+
+      return (
+        fileName.includes(candidateName.replace(/\.[^.]+$/, '')) ||
+        candidateName.includes(fileName.replace(/\.[^.]+$/, ''))
+      );
     });
 
-    const signal: ContextRankingSignal = sourceEvidence || textEvidence
-      ? 'testOrDocumentation'
-      : nameMatch ? 'namingConvention' : 'testOrDocumentation';
+    const signal: ContextRankingSignal =
+      sourceEvidence || textEvidence
+        ? 'testOrDocumentation'
+        : nameMatch
+          ? 'namingConvention'
+          : 'testOrDocumentation';
+
     const candidate = addCandidate(
       candidates,
       file,
@@ -468,8 +592,10 @@ export async function assembleRepositoryContext(
           ? `Matching source text was found in this ${testFile ? 'test' : 'documentation'} file.`
           : `Related by ${testFile ? 'test' : 'documentation'} naming convention.`,
     );
+
     if (signal === 'testOrDocumentation' && !sourceEvidence && !textEvidence) {
-      candidate.score -= weights.testOrDocumentation - weights.namingConvention;
+      candidate.score -=
+        weights.testOrDocumentation - weights.namingConvention;
       candidate.signals.delete('testOrDocumentation');
       candidate.signals.add('namingConvention');
     }
@@ -478,6 +604,7 @@ export async function assembleRepositoryContext(
       for (const related of relatedCandidates) {
         const fileName = path.posix.basename(file).toLowerCase();
         const candidateName = path.posix.basename(related.path).toLowerCase();
+
         if (
           fileName.includes(candidateName.replace(/\.[^.]+$/, '')) ||
           candidateName.includes(fileName.replace(/\.[^.]+$/, ''))
@@ -485,6 +612,7 @@ export async function assembleRepositoryContext(
           const alreadyExists = allDependencies.dependencyEdges.some(
             (edge) => edge.from === file && edge.to === related.path,
           );
+
           if (!alreadyExists) {
             allDependencies.dependencyEdges.push({
               from: file,
@@ -501,12 +629,26 @@ export async function assembleRepositoryContext(
   for (const candidate of candidates.values()) {
     for (const symbol of allSymbols) {
       if (symbol.file !== candidate.path) continue;
-      if (candidate.signals.has('explicitSymbol') ||
-          candidate.signals.has('exactSymbol') ||
-          candidate.signals.has('textMatch')) {
+
+      if (
+        candidate.signals.has('explicitSymbol') ||
+        candidate.signals.has('exactSymbol') ||
+        candidate.signals.has('textMatch')
+      ) {
         resolvedExplicitSymbols.push(symbol);
       }
     }
+  }
+
+  // Calculate dependency metadata once, independently of excerpt selection.
+  const dependencyNeighborhood = getTwoHopDependantEdges(
+    allDependencies.dependencyEdges,
+    new Set(explicitPaths),
+  );
+  if (dependencyNeighborhood.omittedCount > 0) {
+    warnings.push(
+      `Dependency edges were truncated to ${MAX_CONTEXT_DEPENDENCIES}; ${dependencyNeighborhood.omittedCount} eligible edge${dependencyNeighborhood.omittedCount === 1 ? '' : 's'} omitted.`,
+    );
   }
 
   const ranked: RankedContextCandidate[] = rankContextCandidates(
@@ -514,31 +656,46 @@ export async function assembleRepositoryContext(
       path: candidate.path,
       score: candidate.score,
       signals: [...candidate.signals],
-      reasons: [...candidate.reasons].sort((left, right) => left.localeCompare(right)),
+      reasons: [...candidate.reasons].sort(
+        (left, right) => left.localeCompare(right),
+      ),
     })),
   );
+
   const prioritizedPaths = new Set([
     ...explicitPaths,
-    ...ranked.slice(0, MAX_CONTEXT_CANDIDATES).map((candidate) => candidate.path),
+    ...ranked.slice(0, MAX_CONTEXT_CANDIDATES).map(
+      (candidate) => candidate.path,
+    ),
   ]);
+
   if (ranked.some((candidate) => !prioritizedPaths.has(candidate.path))) {
-    warnings.push('Context candidate limit reached; lower-ranked files were omitted.');
+    warnings.push(
+      'Context candidate limit reached; lower-ranked files were omitted.',
+    );
   }
 
   const rankedFiles: ContextFile[] = [];
+
   for (const rankedCandidate of ranked.filter((candidate) =>
     prioritizedPaths.has(candidate.path),
   )) {
     throwIfAborted(signal);
+
     const candidate = candidates.get(rankedCandidate.path);
     if (!candidate) continue;
+
     try {
       const excerpts = await buildExcerpts(
         workspaceRoot,
         candidate,
-        candidate.path === request.activeFile?.replace(/\\/g, '/') ? activeSelection : undefined,
+        candidate.path === request.activeFile?.replace(/\\/g, '/')
+          ? activeSelection
+          : undefined,
       );
+
       if (excerpts.length === 0) continue;
+
       rankedFiles.push({
         path: candidate.path,
         reason: rankedCandidate.reasons.join(' '),
@@ -547,7 +704,9 @@ export async function assembleRepositoryContext(
         excerpts,
       });
     } catch {
-      warnings.push(`${candidate.path}: could not assemble a safe context excerpt.`);
+      warnings.push(
+        `${candidate.path}: could not assemble a safe context excerpt.`,
+      );
     }
   }
 
@@ -556,80 +715,59 @@ export async function assembleRepositoryContext(
     edges: DependencyEdge[];
     unresolvedImports: RepositoryContext['unresolvedImports'];
   } {
-    const selectedPaths = new Set(files.map((file) => file.path));
-    const selectedFileByPath = new Map(files.map((file) => [file.path, file]));
+    const selectedFileByPath = new Map(
+      files.map((file) => [file.path, file]),
+    );
+
     const symbols = [...new Map(
       resolvedExplicitSymbols
         .filter((symbol) => {
           const selected = selectedFileByPath.get(symbol.file);
+
           return selected?.excerpts.some((excerpt) =>
             symbol.startLine <= excerpt.endLine &&
             symbol.endLine >= excerpt.startLine,
           ) ?? false;
         })
-        .map((symbol) => [`${symbol.file}\0${symbol.startLine}\0${symbol.name}`, symbol]),
+        .map((symbol) => [
+          `${symbol.file}\0${symbol.startLine}\0${symbol.name}`,
+          symbol,
+        ]),
     ).values()].sort((left, right) =>
       left.file.localeCompare(right.file) ||
       left.startLine - right.startLine ||
       left.name.localeCompare(right.name),
     );
-    const rootFiles = new Set<string>();
-    if (request.activeFile) {
-      try {
-        rootFiles.add(normalizeWorkspacePath(request.activeFile));
-      } catch {
-        // Safe ignore
-      }
-    }
-    for (const file of mentions.fileMentions) {
-      rootFiles.add(file);
-    }
-    for (const symbol of resolvedExplicitSymbols) {
-      rootFiles.add(symbol.file);
-    }
-    if (rootFiles.size === 0) {
-      for (const path of selectedPaths) rootFiles.add(path);
-    }
 
-    const hop1 = new Set<string>(rootFiles);
-    for (const edge of allDependencies.dependencyEdges) {
-      if (rootFiles.has(edge.to) || rootFiles.has(edge.from)) {
-        hop1.add(edge.from);
-        hop1.add(edge.to);
-      }
-    }
+    // Dependency edges do not depend on budget-selected excerpts.
+    const edges = dependencyNeighborhood.edges;
 
-    const hop2 = new Set<string>(hop1);
-    for (const edge of allDependencies.dependencyEdges) {
-      if (hop1.has(edge.to) || hop1.has(edge.from)) {
-        hop2.add(edge.from);
-        hop2.add(edge.to);
-      }
-    }
-
-    const neighbourhood = new Set<string>([...hop2, ...selectedPaths]);
-
-    const edges = allDependencies.dependencyEdges
-      .filter((edge) => neighbourhood.has(edge.from) && neighbourhood.has(edge.to))
-      .sort((left, right) =>
-        left.from.localeCompare(right.from) ||
-        left.to.localeCompare(right.to) ||
-        left.kind.localeCompare(right.kind),
-      );
+    // Unresolved imports are still limited to selected context files.
     const unresolvedImports = allDependencies.unresolvedImports
-      .filter((item) => neighbourhood.has(item.file))
+      .filter((item) => selectedFileByPath.has(item.file))
       .sort((left, right) =>
-        left.file.localeCompare(right.file) || left.module.localeCompare(right.module),
+        left.file.localeCompare(right.file) ||
+        left.module.localeCompare(right.module),
       );
+
     return {
       symbols: symbols.slice(0, MAX_CONTEXT_SYMBOLS),
-      edges: edges.slice(0, MAX_CONTEXT_DEPENDENCIES),
-      unresolvedImports: unresolvedImports.slice(0, MAX_CONTEXT_UNRESOLVED_IMPORTS),
+      edges,
+      unresolvedImports: unresolvedImports.slice(
+        0,
+        MAX_CONTEXT_UNRESOLVED_IMPORTS,
+      ),
     };
   }
 
-  let budget = fitContextToBudget(rankedFiles, effectiveBudget, explicitPaths);
+  let budget = fitContextToBudget(
+    rankedFiles,
+    effectiveBudget,
+    explicitPaths,
+  );
+
   let metadata = getContextMetadata(budget.relevantFiles);
+
   for (let iteration = 0; iteration < 3; iteration += 1) {
     const nextBudget = fitContextToBudget(
       rankedFiles,
@@ -637,20 +775,39 @@ export async function assembleRepositoryContext(
       explicitPaths,
       JSON.stringify(metadata),
     );
+
     const nextMetadata = getContextMetadata(nextBudget.relevantFiles);
-    const pathsUnchanged = nextBudget.relevantFiles.length === budget.relevantFiles.length &&
-      nextBudget.relevantFiles.every((file, index) =>
-        file.path === budget.relevantFiles[index].path,
+
+    const pathsUnchanged =
+      nextBudget.relevantFiles.length === budget.relevantFiles.length &&
+      nextBudget.relevantFiles.every(
+        (file, index) =>
+          file.path === budget.relevantFiles[index].path,
       );
+
     budget = nextBudget;
     metadata = nextMetadata;
+
     if (pathsUnchanged) break;
   }
 
-  if (metadata.symbols.length >= MAX_CONTEXT_SYMBOLS ||
-      metadata.edges.length >= MAX_CONTEXT_DEPENDENCIES ||
-      metadata.unresolvedImports.length >= MAX_CONTEXT_UNRESOLVED_IMPORTS) {
-    warnings.push('Context relationship details were capped to preserve the token budget.');
+  if (
+    metadata.symbols.length >= MAX_CONTEXT_SYMBOLS ||
+    metadata.unresolvedImports.length >= MAX_CONTEXT_UNRESOLVED_IMPORTS
+  ) {
+    warnings.push(
+      'Context relationship details were capped to preserve the token budget.',
+    );
+  }
+
+  if (budget.relevantFiles.length === 0) {
+    const activeFileConflict = activeFilePath &&
+      budget.budgetConflicts.includes(activeFilePath);
+    warnings.push(
+      activeFileConflict
+        ? `No files could fit within the token budget of ${effectiveBudget} tokens; active file "${activeFilePath}" could not fit.`
+        : `No files could fit within the token budget of ${effectiveBudget} tokens.`,
+    );
   }
 
   return {
@@ -662,6 +819,8 @@ export async function assembleRepositoryContext(
     tokenEstimate: budget.tokenEstimate,
     tokenBudget: effectiveBudget,
     budgetConflicts: budget.budgetConflicts,
-    warnings: [...new Set(warnings)].sort((left, right) => left.localeCompare(right)),
+    warnings: [...new Set(warnings)].sort(
+      (left, right) => left.localeCompare(right),
+    ),
   };
 }

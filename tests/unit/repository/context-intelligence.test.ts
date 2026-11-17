@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { ChangeRequest, ContextFile } from '../../../src/shared/contracts';
 import { createRepositoryIntelligence } from '../../../src/repository/index';
+import { getTwoHopDependantEdges } from '../../../src/repository/repository-service';
 import { fitContextToBudget } from '../../../src/repository/context-budget';
 import { parseRepositoryMentions } from '../../../src/repository/mention-parser';
 import {
@@ -110,6 +111,77 @@ describe('context ranking and budget', () => {
     assert.ok(budget.budgetConflicts.length > 0);
     assert.ok(budget.relevantFiles.length > 0);
   });
+
+  it('prioritizes direct dependant edges before second-hop edges', () => {
+    const result = getTwoHopDependantEdges([
+      { from: 'a-second.py', to: 'z-direct.py', kind: 'imports', evidence: 'observed' },
+      { from: 'z-direct.py', to: 'root.py', kind: 'imports', evidence: 'observed' },
+    ], new Set(['root.py']));
+
+    assert.deepEqual(result.edges.map(({ from }) => from), [
+      'z-direct.py',
+      'a-second.py',
+    ]);
+  });
+
+  it('traverses dependants in reverse only and excludes unrelated edges', () => {
+    const result = getTwoHopDependantEdges([
+      { from: 'dependent.py', to: 'root.py', kind: 'imports', evidence: 'observed' },
+      { from: 'outer.py', to: 'dependent.py', kind: 'imports', evidence: 'observed' },
+      { from: 'root.py', to: 'dependency.py', kind: 'imports', evidence: 'observed' },
+      { from: 'unrelated.py', to: 'elsewhere.py', kind: 'imports', evidence: 'observed' },
+    ], new Set(['root.py']));
+
+    assert.deepEqual(result.edges.map(({ from, to }) => `${from}->${to}`), [
+      'dependent.py->root.py',
+      'outer.py->dependent.py',
+    ]);
+  });
+
+  it('caps the prioritized dependant edges at 200 and reports omissions', () => {
+    const directEdges = Array.from({ length: 198 }, (_, index) => ({
+      from: `direct-${String(index).padStart(3, '0')}.py`,
+      to: 'root.py',
+      kind: 'imports' as const,
+      evidence: 'observed' as const,
+    }));
+    const secondHopEdges = Array.from({ length: 10 }, (_, index) => ({
+      from: `second-${String(index).padStart(2, '0')}.py`,
+      to: 'direct-000.py',
+      kind: 'imports' as const,
+      evidence: 'observed' as const,
+    }));
+    const result = getTwoHopDependantEdges(
+      [...secondHopEdges, ...directEdges],
+      new Set(['root.py']),
+    );
+
+    assert.equal(result.edges.length, 200);
+    assert.equal(result.omittedCount, 8);
+    assert.ok(result.edges.slice(0, 198).every(({ from }) => from.startsWith('direct-')));
+    assert.deepEqual(
+      result.edges.slice(198).map(({ from }) => from),
+      ['second-00.py', 'second-01.py'],
+    );
+  });
+
+  it('sorts equal-distance dependant edges deterministically', () => {
+    const edges = [
+      { from: 'b.py', to: 'root.py', kind: 'tests' as const, evidence: 'inferred' as const },
+      { from: 'a.py', to: 'root.py', kind: 'imports' as const, evidence: 'observed' as const },
+      { from: 'a.py', to: 'root.py', kind: 'imports' as const, evidence: 'inferred' as const },
+    ];
+    const first = getTwoHopDependantEdges(edges, new Set(['root.py']));
+    const second = getTwoHopDependantEdges([...edges].reverse(), new Set(['root.py']));
+
+    assert.deepEqual(first, second);
+    assert.deepEqual(first.edges, [
+      { from: 'a.py', to: 'root.py', kind: 'imports', evidence: 'inferred' },
+      { from: 'a.py', to: 'root.py', kind: 'imports', evidence: 'observed' },
+      { from: 'b.py', to: 'root.py', kind: 'tests', evidence: 'inferred' },
+    ]);
+    assert.equal(first.omittedCount, 0);
+  });
 });
 
 describe('repository context intelligence', () => {
@@ -162,6 +234,65 @@ describe('repository context intelligence', () => {
       assert.ok(active?.excerpts.some(({ text }) => text.includes('selected_value')));
       assert.ok(context.warnings.some((warning) => warning.includes('missing.py')));
       assert.ok(context.warnings.some((warning) => warning.includes('does_not_exist')));
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('reports an oversized active file as a budget conflict', async () => {
+    const root = await createWorkspace();
+
+    try {
+      await writeWorkspaceFile(root, 'src/large.py', `value = "${'x'.repeat(12000)}"\n`);
+      const repository = createRepositoryIntelligence(600);
+      await repository.initialize(root);
+
+      const context = await repository.getContext(request('Review active file', {
+        activeFile: 'src/large.py',
+      }));
+
+      assert.ok(context.budgetConflicts.includes('src/large.py'));
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('warns when no files fit the budget and identifies a conflicting active file', async () => {
+    const root = await createWorkspace();
+
+    try {
+      await writeWorkspaceFile(root, 'src/active.py', 'value = 1\n');
+      const repository = createRepositoryIntelligence(1);
+      await repository.initialize(root);
+
+      const context = await repository.getContext(request('Review active file', {
+        activeFile: 'src/active.py',
+      }));
+
+      assert.deepEqual(context.relevantFiles, []);
+      assert.ok(context.warnings.some((warning) =>
+        warning.includes('No files could fit within the token budget') &&
+        warning.includes('src/active.py')));
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('does not warn about budget fit when files are successfully selected', async () => {
+    const root = await createWorkspace();
+
+    try {
+      await writeWorkspaceFile(root, 'src/active.py', 'value = 1\n');
+      const repository = createRepositoryIntelligence();
+      await repository.initialize(root);
+
+      const context = await repository.getContext(request('Review active file', {
+        activeFile: 'src/active.py',
+      }));
+
+      assert.ok(context.relevantFiles.length > 0);
+      assert.ok(context.warnings.every((warning) =>
+        !warning.includes('No files could fit within the token budget')));
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -238,6 +369,37 @@ describe('repository context intelligence', () => {
       const edgePairs = context.dependencyEdges.map((edge) => `${edge.from}->${edge.to}`);
       assert.ok(edgePairs.includes('src/intermediate.py->src/target.py'), `expected 1-hop edge in ${edgePairs.join(', ')}`);
       assert.ok(edgePairs.includes('src/outer.py->src/intermediate.py'), `expected 2-hop edge in ${edgePairs.join(', ')}`);
+      assert.ok(context.warnings.every((warning) =>
+        !warning.includes('Dependency edges were truncated')));
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('warns with the omitted count when dependant edges exceed 200', async () => {
+    const root = await createWorkspace();
+
+    try {
+      await writeWorkspaceFile(root, 'src/root.py', 'value = 1\n');
+      for (let index = 0; index < 202; index += 1) {
+        await writeWorkspaceFile(
+          root,
+          `src/dependants/dependent-${String(index).padStart(3, '0')}.py`,
+          'import root\n',
+        );
+      }
+
+      const repository = createRepositoryIntelligence(20000);
+      await repository.initialize(root);
+      const context = await repository.getContext(request(
+        'Inspect @file:src/root.py',
+        { explicitFileMentions: ['src/root.py'] },
+      ));
+
+      assert.equal(context.dependencyEdges.length, 200);
+      assert.ok(context.warnings.some((warning) =>
+        warning.includes('Dependency edges were truncated to 200') &&
+        warning.includes('2 eligible edges omitted')));
     } finally {
       await rm(root, { recursive: true, force: true });
     }

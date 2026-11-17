@@ -19,6 +19,10 @@ import {
 import { normalizeWorkspacePath } from './path-safety';
 import { assembleRepositoryContext } from './repository-service';
 import {
+  DEFAULT_TOKEN_BUDGET,
+  normalizeContextTokenBudget,
+} from './context-budget';
+import {
   DEFAULT_CONTEXT_RANKING_WEIGHTS,
   type ContextRankingWeights,
 } from './context-ranker';
@@ -56,7 +60,12 @@ export type {
   ContextRankingWeights,
   RankedContextCandidate,
 } from './context-ranker';
-export { estimateContextTokens, fitContextToBudget } from './context-budget';
+export {
+  DEFAULT_TOKEN_BUDGET,
+  estimateContextTokens,
+  fitContextToBudget,
+  normalizeContextTokenBudget,
+} from './context-budget';
 export type { ContextBudgetResult } from './context-budget';
 export { assembleRepositoryContext } from './repository-service';
 export type { RepositoryServiceOptions } from './repository-service';
@@ -82,21 +91,13 @@ export type {
   ToolResult,
 } from './tools';
 
-export const DEFAULT_TOKEN_BUDGET = 16000;
-
 export function createRepositoryIntelligence(
   tokenBudget = DEFAULT_TOKEN_BUDGET,
   rankingWeights: Partial<ContextRankingWeights> = DEFAULT_CONTEXT_RANKING_WEIGHTS,
 ): RepositoryIntelligence {
-  let effectiveTokenBudget = tokenBudget;
-  let budgetWarning: string | undefined;
-  if (!Number.isInteger(tokenBudget) || tokenBudget < 1 || tokenBudget > 20000) {
-    effectiveTokenBudget = Math.max(
-      1,
-      Math.min(20000, Math.round(Number.isFinite(tokenBudget) ? tokenBudget : DEFAULT_TOKEN_BUDGET)),
-    );
-    budgetWarning = `Context token budget ${tokenBudget} is out of range (1-20000); clamped to ${effectiveTokenBudget}.`;
-  }
+  const normalizedBudget = normalizeContextTokenBudget(tokenBudget);
+  const effectiveTokenBudget = normalizedBudget.tokenBudget;
+  const budgetWarning = normalizedBudget.warning;
 
   let workspaceRoot: string | undefined;
   let pythonIndex: PythonWorkspaceIndex | undefined;

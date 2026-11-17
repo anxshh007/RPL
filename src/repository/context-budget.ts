@@ -1,9 +1,42 @@
 import type { ContextFile } from '../shared/contracts';
 
+export const DEFAULT_TOKEN_BUDGET = 16000;
+
+export interface NormalizedTokenBudget {
+  tokenBudget: number;
+  warning?: string;
+}
+
 export interface ContextBudgetResult {
   relevantFiles: ContextFile[];
   tokenEstimate: number;
   budgetConflicts: string[];
+}
+
+export function normalizeContextTokenBudget(
+  tokenBudget: number,
+): NormalizedTokenBudget {
+  if (
+    Number.isInteger(tokenBudget) &&
+    tokenBudget >= 1 &&
+    tokenBudget <= 20000
+  ) {
+    return { tokenBudget };
+  }
+
+  const clamped = Math.max(
+    1,
+    Math.min(
+      20000,
+      Math.round(
+        Number.isFinite(tokenBudget) ? tokenBudget : DEFAULT_TOKEN_BUDGET,
+      ),
+    ),
+  );
+  return {
+    tokenBudget: clamped,
+    warning: `Context token budget ${tokenBudget} is out of range (1-20000); clamped to ${clamped}.`,
+  };
 }
 
 export function estimateContextTokens(text: string): number {

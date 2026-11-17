@@ -254,6 +254,48 @@ function sortUniqueEdges(edges: DependencyEdge[]): DependencyEdge[] {
   );
 }
 
+function getTestedModuleStem(file: string): string | undefined {
+  const basename = path.posix.basename(file);
+  if (!basename.toLowerCase().endsWith('.py')) return undefined;
+  const stem = basename.slice(0, -path.posix.extname(basename).length);
+  const prefixed = /^test_(.+)$/i.exec(stem)?.[1];
+  if (prefixed) return prefixed;
+  return /^(.+)_test$/i.exec(stem)?.[1];
+}
+
+function inferTestEdges(files: string[]): DependencyEdge[] {
+  const sourceFilesByStem = new Map<string, string[]>();
+  const testFiles = new Map<string, string>();
+
+  for (const file of files) {
+    const testedStem = getTestedModuleStem(file);
+    if (testedStem) {
+      testFiles.set(file, testedStem);
+      continue;
+    }
+
+    if (!file.toLowerCase().endsWith('.py')) continue;
+    const basename = path.posix.basename(file);
+    const stem = basename.slice(0, -path.posix.extname(basename).length);
+    const matches = sourceFilesByStem.get(stem) ?? [];
+    matches.push(file);
+    sourceFilesByStem.set(stem, matches);
+  }
+
+  const edges: DependencyEdge[] = [];
+  for (const [testFile, testedStem] of testFiles) {
+    const candidates = sourceFilesByStem.get(testedStem) ?? [];
+    if (candidates.length !== 1) continue;
+    edges.push({
+      from: normalizeWorkspacePath(testFile),
+      to: normalizeWorkspacePath(candidates[0]),
+      kind: 'tests',
+      evidence: 'inferred',
+    });
+  }
+  return edges;
+}
+
 export async function analyzePythonDependencies(
   workspaceRoot: string,
   paths?: string[],
@@ -312,7 +354,11 @@ export async function analyzePythonDependencies(
     }
   }
 
-  const filteredEdges = sortUniqueEdges(dependencyEdges).filter((edge) =>
+  const allEdges = sortUniqueEdges([
+    ...dependencyEdges,
+    ...inferTestEdges(index.files.map((file) => file.file)),
+  ]);
+  const filteredEdges = allEdges.filter((edge) =>
     !requested || requested.has(edge.from) || requested.has(edge.to),
   );
   unresolvedImports.sort((left, right) =>

@@ -188,6 +188,44 @@ describe('analyzePythonDependencies', () => {
     }
   });
 
+  it('infers test edges only for clear unique filename counterparts', async () => {
+    const root = await createWorkspace();
+
+    try {
+      await writeWorkspaceFile(root, 'tests/test_cli.py', 'def test_cli(): pass\n');
+      await writeWorkspaceFile(root, 'src/cli.py', 'def run(): pass\n');
+      await writeWorkspaceFile(root, 'tests/test_client.py', 'def test_client(): pass\n');
+      await writeWorkspaceFile(root, 'src/climate.py', 'def weather(): pass\n');
+
+      const result = await analyzePythonDependencies(root);
+      assert.deepEqual(result.dependencyEdges, [
+        {
+          from: 'tests/test_cli.py',
+          to: 'src/cli.py',
+          kind: 'tests',
+          evidence: 'inferred',
+        },
+      ]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('does not infer test edges when the source filename is ambiguous', async () => {
+    const root = await createWorkspace();
+
+    try {
+      await writeWorkspaceFile(root, 'tests/test_cli.py', 'def test_cli(): pass\n');
+      await writeWorkspaceFile(root, 'src/cli.py', 'def run(): pass\n');
+      await writeWorkspaceFile(root, 'tools/cli.py', 'def run(): pass\n');
+
+      const result = await analyzePythonDependencies(root);
+      assert.deepEqual(result.dependencyEdges, []);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('filters dependency edges to requested paths and wires service getDependencies', async () => {
     const root = await createWorkspace();
 
