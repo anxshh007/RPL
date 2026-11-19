@@ -13,9 +13,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      # Switch to `npm ci` once package-lock.json is committed (see docs/DECISIONS.md D-09)
+      - name: Install ripgrep
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ripgrep
       - name: Install dependencies
-        run: npm install
+        run: npm ci
       - name: Typecheck & compile (catches contract breaks between modules)
         run: npm run compile
       - name: Unit tests
