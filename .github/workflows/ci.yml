@@ -21,6 +21,10 @@ jobs:
         run: npm ci
       - name: Typecheck & compile (catches contract breaks between modules)
         run: npm run compile
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pytest
       - name: Unit tests
         run: npm test
       - name: Guard — no direct model-provider calls in extension code
