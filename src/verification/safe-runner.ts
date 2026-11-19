@@ -157,7 +157,11 @@ export async function executePytest(params: ExecutionParams): Promise<ExecutionO
     ...sanitizeEnvironment(process.env),
     PYTHONDONTWRITEBYTECODE: '1',
     PYTHONUNBUFFERED: '1',
+    // Plain text output: colour codes around the summary line make the counts unparseable.
+    PY_COLORS: '0',
+    NO_COLOR: '1',
   };
+  delete safeEnv.FORCE_COLOR;
 
   return new Promise<ExecutionOutput>((resolve) => {
     let child: ChildProcess;

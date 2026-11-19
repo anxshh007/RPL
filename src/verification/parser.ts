@@ -46,7 +46,9 @@ export function parsePytestOutput(params: {
   cancelled: boolean;
 }): ParsedPytestResult {
   const { stdout, stderr, exitCode, timedOut, cancelled } = params;
-  const combined = `${stdout}\n${stderr}`;
+  const rawCombined = `${stdout}\n${stderr}`;
+  // Strip ANSI colour and formatting escape codes so summary parsing is invariant to terminal color
+  const combined = rawCombined.replace(/\u001b\[[0-9;]*[a-zA-Z]/g, '');
   const limitations: string[] = [];
 
   // Handle timeout

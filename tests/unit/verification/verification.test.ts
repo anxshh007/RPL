@@ -405,6 +405,45 @@ test('live execution: executes pytest on sample flask repo test_helper.py and re
   assert.equal(report.parsingComplete, true);
 });
 
+test('live execution: parses real counts truthfully when host environment has PY_COLORS or FORCE_COLOR set', async (t) => {
+  if (!hasLocalPytest) {
+    t.skip('pytest not installed in environment');
+    return;
+  }
+
+  const origPyColors = process.env.PY_COLORS;
+  const origForceColor = process.env.FORCE_COLOR;
+
+  try {
+    process.env.PY_COLORS = '1';
+    process.env.FORCE_COLOR = '1';
+
+    const service = createVerificationService(fixtureRoot);
+    const report = await service.verify({
+      requestId: 'req-live-color',
+      changedFiles: ['tests/test_helper.py'],
+      candidateTests: [],
+    });
+
+    assert.equal(report.status, 'passed');
+    assert.equal(report.counts.passed, 1);
+    assert.equal(report.counts.failed, 0);
+    assert.equal(report.counts.total, 1);
+    assert.equal(report.parsingComplete, true);
+  } finally {
+    if (origPyColors !== undefined) {
+      process.env.PY_COLORS = origPyColors;
+    } else {
+      delete process.env.PY_COLORS;
+    }
+    if (origForceColor !== undefined) {
+      process.env.FORCE_COLOR = origForceColor;
+    } else {
+      delete process.env.FORCE_COLOR;
+    }
+  }
+});
+
 test('live execution: executes failing test and truthfully reports failure', async (t) => {
   if (!hasLocalPytest) {
     t.skip('pytest not installed in environment');
