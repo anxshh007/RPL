@@ -243,7 +243,6 @@ function throwIfAborted(signal?: AbortSignal): void {
   }
 }
 
-<<<<<<< HEAD
 /**
  * Returns dependency edges inside the two-hop dependant neighbourhood
  * of the supplied root files.
@@ -295,38 +294,6 @@ export function getTwoHopDependantEdges(
       prioritizedEdges.length - MAX_CONTEXT_DEPENDENCIES,
     ),
   };
-=======
-function getTwoHopDependantEdges(
-  dependencyEdges: DependencyEdge[],
-  roots: Set<string>,
-): DependencyEdge[] {
-  const neighbourhood = new Set(roots);
-  let frontier = new Set(roots);
-
-  for (let hop = 0; hop < 2; hop += 1) {
-    const nextFrontier = new Set<string>();
-    for (const edge of dependencyEdges) {
-      if (frontier.has(edge.to) && !neighbourhood.has(edge.from)) {
-        neighbourhood.add(edge.from);
-        nextFrontier.add(edge.from);
-      }
-    }
-    frontier = nextFrontier;
-  }
-
-  const uniqueEdges = new Map<string, DependencyEdge>();
-  for (const edge of dependencyEdges) {
-    if (!neighbourhood.has(edge.from) || !neighbourhood.has(edge.to)) continue;
-    uniqueEdges.set(`${edge.from}\0${edge.to}\0${edge.kind}\0${edge.evidence}`, edge);
-  }
-
-  return [...uniqueEdges.values()].sort((left, right) =>
-    left.from.localeCompare(right.from) ||
-    left.to.localeCompare(right.to) ||
-    left.kind.localeCompare(right.kind) ||
-    left.evidence.localeCompare(right.evidence),
-  );
->>>>>>> e8815f6 (feat: complete repository intelligence module)
 }
 
 export async function assembleRepositoryContext(
@@ -366,28 +333,19 @@ export async function assembleRepositoryContext(
     addCandidate(candidates, file, 'explicitFile', weights.explicitFile);
   }
 
-<<<<<<< HEAD
   let activeSelection:
     | { startLine: number; endLine: number; text?: string }
     | undefined;
   let activeFilePath: string | undefined;
 
-=======
-  let activeSelection: { startLine: number; endLine: number; text?: string } | undefined;
-  let activeFilePath: string | undefined;
->>>>>>> e8815f6 (feat: complete repository intelligence module)
   if (request.activeFile) {
     try {
       const activeFile = normalizeWorkspacePath(request.activeFile);
       activeFilePath = activeFile;
 
       if (availableFiles.has(activeFile)) {
-<<<<<<< HEAD
         explicitPaths.add(activeFile);
 
-=======
-        activeFilePath = activeFile;
->>>>>>> e8815f6 (feat: complete repository intelligence module)
         const candidate = addCandidate(
           candidates,
           activeFile,
@@ -476,13 +434,6 @@ export async function assembleRepositoryContext(
       });
     }
   }
-
-  const dependencyRoots = new Set(explicitPaths);
-  if (activeFilePath) dependencyRoots.add(activeFilePath);
-  const dependencyNeighborhoodEdges = getTwoHopDependantEdges(
-    allDependencies.dependencyEdges,
-    dependencyRoots,
-  );
 
   const instructionTerms = getInstructionTerms(request.instruction);
 
@@ -764,14 +715,10 @@ export async function assembleRepositoryContext(
     edges: DependencyEdge[];
     unresolvedImports: RepositoryContext['unresolvedImports'];
   } {
-<<<<<<< HEAD
     const selectedFileByPath = new Map(
       files.map((file) => [file.path, file]),
     );
 
-=======
-    const selectedFileByPath = new Map(files.map((file) => [file.path, file]));
->>>>>>> e8815f6 (feat: complete repository intelligence module)
     const symbols = [...new Map(
       resolvedExplicitSymbols
         .filter((symbol) => {
@@ -791,15 +738,10 @@ export async function assembleRepositoryContext(
       left.startLine - right.startLine ||
       left.name.localeCompare(right.name),
     );
-<<<<<<< HEAD
-
     // Dependency edges do not depend on budget-selected excerpts.
     const edges = dependencyNeighborhood.edges;
 
     // Unresolved imports are still limited to selected context files.
-=======
-    const edges = dependencyNeighborhoodEdges;
->>>>>>> e8815f6 (feat: complete repository intelligence module)
     const unresolvedImports = allDependencies.unresolvedImports
       .filter((item) => selectedFileByPath.has(item.file))
       .sort((left, right) =>

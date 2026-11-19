@@ -1,13 +1,9 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-<<<<<<< HEAD
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createRepositoryIntelligence } from '../../../src/repository/index';
-import {
-  createRepositoryToolHandlers,
-=======
 import type {
   ChangeRequest,
   RepositoryContext,
@@ -16,12 +12,11 @@ import type {
   SymbolRecord,
 } from '../../../src/shared/contracts';
 import {
->>>>>>> e8815f6 (feat: complete repository intelligence module)
+  createRepositoryToolHandlers,
   handleFindSymbol,
   handleGetRepositoryContext,
   handleReadFile,
   handleSearchWorkspace,
-<<<<<<< HEAD
   REPOSITORY_TOOL_DEFINITIONS,
   validateFindSymbolInput,
   validateGetRepositoryContextInput,
@@ -224,8 +219,8 @@ describe('repository MCP tools', () => {
         assert.equal(contextRes.error.kind, 'cancelled');
       }
     });
-=======
-} from '../../../src/repository/tools';
+});
+});
 
 function isSafeError(
   result: unknown,
@@ -279,7 +274,8 @@ describe('repository tool handlers', () => {
       },
     }), { query: ' match ', limit: 12 });
 
-    assert.deepEqual(result, expected);
+    assert.equal(result.ok, true);
+    if (result.ok) assert.deepEqual(result.value, expected);
     assert.deepEqual(received, ['match', 12]);
   });
 
@@ -287,8 +283,8 @@ describe('repository tool handlers', () => {
     const service = repository();
     for (const input of [{ query: '' }, { query: 'x', limit: 0 }, { query: 'x', limit: 1001 }]) {
       const result = await handleSearchWorkspace(service, input);
-      assert.ok(isSafeError(result));
-      assert.equal(result.kind, 'validation');
+      assert.equal(result.ok, false);
+      if (!result.ok) assert.equal(result.error.kind, 'validation');
     }
   });
 
@@ -301,7 +297,8 @@ describe('repository tool handlers', () => {
       },
     }), { path: 'src\\app.py', startLine: 3, endLine: 5 });
 
-    assert.equal(result, 'content');
+    assert.equal(result.ok, true);
+    if (result.ok) assert.equal(result.value.content, 'content');
     assert.deepEqual(received, ['src/app.py', 3, 5]);
   });
 
@@ -313,8 +310,8 @@ describe('repository tool handlers', () => {
       { path: 'src/app.py', startLine: 5, endLine: 4 },
     ]) {
       const result = await handleReadFile(service, input);
-      assert.ok(isSafeError(result));
-      assert.equal(result.kind, 'validation');
+      assert.equal(result.ok, false);
+      if (!result.ok) assert.equal(result.error.kind, 'validation');
     }
   });
 
@@ -334,7 +331,8 @@ describe('repository tool handlers', () => {
       },
     }), { name: ' build_app ', fileHint: 'src\\app.py' });
 
-    assert.deepEqual(result, expected);
+    assert.equal(result.ok, true);
+    if (result.ok) assert.deepEqual(result.value, expected);
     assert.deepEqual(received, ['build_app', 'src/app.py']);
   });
 
@@ -346,8 +344,8 @@ describe('repository tool handlers', () => {
       { name: 'build_app', fileHint: 42 },
     ]) {
       const result = await handleFindSymbol(service, input);
-      assert.ok(isSafeError(result));
-      assert.equal(result.kind, 'validation');
+      assert.equal(result.ok, false);
+      if (!result.ok) assert.equal(result.error.kind, 'validation');
     }
   });
 
@@ -372,9 +370,11 @@ describe('repository tool handlers', () => {
     }), request);
 
     assert.deepEqual(received, request);
-    assert.ok(!isSafeError(result));
-    assert.deepEqual(result.warnings, ['An explicit file mention could not be resolved.']);
-    assert.ok(!JSON.stringify(result).includes('C:\\private'));
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.deepEqual(result.value.warnings, ['An explicit file mention could not be resolved.']);
+      assert.ok(!JSON.stringify(result.value).includes('C:\\private'));
+    }
   });
 
   it('rejects malformed or unsafe repository-context requests', async () => {
@@ -385,8 +385,8 @@ describe('repository tool handlers', () => {
       { ...request, activeFile: 'C:\\private\\secret.py' },
     ]) {
       const result = await handleGetRepositoryContext(service, input);
-      assert.ok(isSafeError(result));
-      assert.equal(result.kind, 'validation');
+      assert.equal(result.ok, false);
+      if (!result.ok) assert.equal(result.error.kind, 'validation');
     }
   });
 
@@ -402,13 +402,15 @@ describe('repository tool handlers', () => {
     ]);
 
     for (const result of results) {
-      assert.ok(isSafeError(result));
-      assert.equal(result.kind, 'internal');
-      assert.equal(result.message, 'Repository operation failed.');
-      assert.equal(result.retryable, false);
-      assert.ok(!JSON.stringify(result).includes('top-secret'));
-      assert.ok(!JSON.stringify(result).includes('C:\\private'));
+      assert.equal(result.ok, false);
+      if (!result.ok) {
+        assert.ok(isSafeError(result.error));
+        assert.equal(result.error.kind, 'internal');
+        assert.equal(result.error.message, 'Repository operation failed.');
+        assert.equal(result.error.retryable, false);
+        assert.ok(!JSON.stringify(result).includes('top-secret'));
+        assert.ok(!JSON.stringify(result).includes('C:\\private'));
+      }
     }
->>>>>>> e8815f6 (feat: complete repository intelligence module)
   });
 });

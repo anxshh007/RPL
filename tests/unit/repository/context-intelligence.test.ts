@@ -202,9 +202,9 @@ describe('repository context intelligence', () => {
       }));
 
       assert.deepEqual(context.dependencyEdges, [
+        { from: 'pkg/direct.py', to: 'pkg/base.py', kind: 'imports', evidence: 'observed' },
         { from: 'pkg/base.py', to: 'pkg/direct.py', kind: 'imports', evidence: 'observed' },
         { from: 'pkg/deep.py', to: 'pkg/direct.py', kind: 'imports', evidence: 'observed' },
-        { from: 'pkg/direct.py', to: 'pkg/base.py', kind: 'imports', evidence: 'observed' },
       ]);
       assert.ok(!context.relevantFiles.some(({ path: file }) =>
         ['pkg/base.py', 'pkg/direct.py', 'pkg/deep.py'].includes(file)));
@@ -238,8 +238,8 @@ describe('repository context intelligence', () => {
 
       assert.ok(context.relevantFiles.some(({ path: file }) => file === 'pkg/base.py'));
       assert.deepEqual(context.dependencyEdges, [
-        { from: 'pkg/deep.py', to: 'pkg/direct.py', kind: 'imports', evidence: 'observed' },
         { from: 'pkg/direct.py', to: 'pkg/base.py', kind: 'imports', evidence: 'observed' },
+        { from: 'pkg/deep.py', to: 'pkg/direct.py', kind: 'imports', evidence: 'observed' },
       ]);
       assert.ok(!context.dependencyEdges.some(({ from, to }) =>
         from.startsWith('other/') || to.startsWith('other/')));
