@@ -1,0 +1,283 @@
+/* ==========================================================================
+   RepoPilot AI — Webview Stylesheet
+   Pure CSS using VS Code native theme variables (--vscode-*)
+   ========================================================================== */
+
+:root {
+  --rp-bg: var(--vscode-editor-background, #ffffff);
+  --rp-fg: var(--vscode-editor-foreground, #1f2328);
+  --rp-border: var(--vscode-panel-border, #d0d7de);
+  --rp-sidebar-bg: var(--vscode-sideBar-background, #f6f8fa);
+  --rp-input-bg: var(--vscode-input-background, #ffffff);
+  --rp-input-fg: var(--vscode-input-foreground, #1f2328);
+  --rp-input-border: var(--vscode-input-border, #d0d7de);
+  --rp-button-bg: var(--vscode-button-background, #0969da);
+  --rp-button-fg: var(--vscode-button-foreground, #ffffff);
+  --rp-button-hover: var(--vscode-button-hoverBackground, #085cc1);
+  --rp-badge-bg: var(--vscode-badge-background, #eaeef2);
+  --rp-badge-fg: var(--vscode-badge-foreground, #24292f);
+}
+
+/* Base resets */
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+  color: var(--rp-fg);
+  background-color: var(--rp-bg);
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+#root {
+  width: 100%;
+  min-height: 100%;
+}
+
+/* Layout & Flexbox */
+.flex { display: flex; }
+.inline-flex { display: inline-flex; }
+.flex-col { flex-direction: column; }
+.flex-wrap { flex-wrap: wrap; }
+.flex-shrink-0 { flex-shrink: 0; }
+.items-center { align-items: center; }
+.items-start { align-items: flex-start; }
+.justify-between { justify-content: space-between; }
+.justify-center { justify-content: center; }
+
+/* Grid */
+.grid { display: grid; }
+.grid-cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.grid-cols-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+
+/* Spacing — Gap */
+.gap-1 { gap: 0.25rem; }
+.gap-1\.5 { gap: 0.375rem; }
+.gap-2 { gap: 0.5rem; }
+.gap-2\.5 { gap: 0.625rem; }
+
+/* Spacing — Padding */
+.p-0\.5 { padding: 0.125rem; }
+.p-1 { padding: 0.25rem; }
+.p-1\.5 { padding: 0.375rem; }
+.p-2 { padding: 0.5rem; }
+.p-2\.5 { padding: 0.625rem; }
+.p-3 { padding: 0.75rem; }
+.px-1 { padding-left: 0.25rem; padding-right: 0.25rem; }
+.px-1\.5 { padding-left: 0.375rem; padding-right: 0.375rem; }
+.px-2 { padding-left: 0.5rem; padding-right: 0.5rem; }
+.px-2\.5 { padding-left: 0.625rem; padding-right: 0.625rem; }
+.px-3 { padding-left: 0.75rem; padding-right: 0.75rem; }
+.px-3\.5 { padding-left: 0.875rem; padding-right: 0.875rem; }
+.py-0\.2 { padding-top: 0.05rem; padding-bottom: 0.05rem; }
+.py-0\.5 { padding-top: 0.125rem; padding-bottom: 0.125rem; }
+.py-1 { padding-top: 0.25rem; padding-bottom: 0.25rem; }
+.py-1\.5 { padding-top: 0.375rem; padding-bottom: 0.375rem; }
+.py-2 { padding-top: 0.5rem; padding-bottom: 0.5rem; }
+.py-2\.5 { padding-top: 0.625rem; padding-bottom: 0.625rem; }
+.pl-3 { padding-left: 0.75rem; }
+.pl-5 { padding-left: 1.25rem; }
+.pt-1 { padding-top: 0.25rem; }
+.pt-2 { padding-top: 0.5rem; }
+.pt-2\.5 { padding-top: 0.625rem; }
+.pb-3 { padding-bottom: 0.75rem; }
+
+@media (min-width: 640px) {
+  .sm\:p-5 { padding: 1.25rem; }
+}
+
+/* Spacing — Margin */
+.m-1 { margin: 0.25rem; }
+.-m-1 { margin: -0.25rem; }
+.mx-1 { margin-left: 0.25rem; margin-right: 0.25rem; }
+.-mx-1 { margin-left: -0.25rem; margin-right: -0.25rem; }
+.mx-auto { margin-left: auto; margin-right: auto; }
+.my-2 { margin-top: 0.5rem; margin-bottom: 0.5rem; }
+.mt-0\.5 { margin-top: 0.125rem; }
+.mt-1 { margin-top: 0.25rem; }
+.mt-1\.5 { margin-top: 0.375rem; }
+.mt-2 { margin-top: 0.5rem; }
+.mt-2\.5 { margin-top: 0.625rem; }
+.mt-3 { margin-top: 0.75rem; }
+.mb-1\.5 { margin-bottom: 0.375rem; }
+.mb-2 { margin-bottom: 0.5rem; }
+.mb-2\.5 { margin-bottom: 0.625rem; }
+
+/* Space Between Children */
+.space-y-0\.5 > * + * { margin-top: 0.125rem; }
+.space-y-1 > * + * { margin-top: 0.25rem; }
+.space-y-1\.5 > * + * { margin-top: 0.375rem; }
+.space-y-2 > * + * { margin-top: 0.5rem; }
+.space-y-3 > * + * { margin-top: 0.75rem; }
+.space-y-4 > * + * { margin-top: 1rem; }
+
+/* Sizing */
+.w-full { width: 100%; }
+.w-1\.5 { width: 0.375rem; }
+.w-px { width: 1px; }
+.w-7 { width: 1.75rem; }
+.h-1\.5 { height: 0.375rem; }
+.h-3\.5 { height: 0.875rem; }
+.h-7 { height: 1.75rem; }
+.h-\[280px\] { height: 280px; }
+.min-h-screen { min-height: 100vh; }
+.max-h-52 { max-height: 13rem; }
+.max-h-\[300px\] { max-height: 300px; }
+.max-w-3xl { max-width: 48rem; }
+.max-w-\[140px\] { max-width: 140px; }
+.max-w-\[280px\] { max-width: 280px; }
+
+/* Typography */
+.font-sans { font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif); }
+.font-mono { font-family: var(--vscode-editor-font-family, Consolas, Monaco, "Courier New", monospace); }
+.font-normal { font-weight: 400; }
+.font-medium { font-weight: 500; }
+.font-semibold { font-weight: 600; }
+.font-bold { font-weight: 700; }
+.text-\[9px\] { font-size: 9px; line-height: 12px; }
+.text-\[10px\] { font-size: 10px; line-height: 14px; }
+.text-\[11px\] { font-size: 11px; line-height: 15px; }
+.text-\[12px\] { font-size: 12px; line-height: 16px; }
+.text-xs { font-size: 0.75rem; line-height: 1rem; }
+.text-sm { font-size: 0.875rem; line-height: 1.25rem; }
+.text-center { text-align: center; }
+.text-left { text-align: left; }
+.tracking-tight { letter-spacing: -0.025em; }
+.leading-relaxed { line-height: 1.625; }
+.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.uppercase { text-transform: uppercase; }
+.break-all { word-break: break-all; }
+.whitespace-pre { white-space: pre; }
+.whitespace-pre-wrap { white-space: pre-wrap; }
+.list-disc { list-style-type: disc; }
+
+/* Colors — Text */
+.text-white { color: #ffffff; }
+.text-gray-400 { color: #8c959f; }
+.text-gray-500 { color: #57606a; }
+.text-gray-600 { color: #424a53; }
+.text-gray-700 { color: #32383f; }
+.text-gray-800 { color: #24292f; }
+.text-gray-900 { color: #1f2328; }
+.text-red-600 { color: #d1242f; }
+.text-red-700 { color: #cf222e; }
+.text-red-800 { color: #a40e26; }
+.text-amber-500 { color: #bf8700; }
+.text-amber-600 { color: #9a6700; }
+.text-amber-700 { color: #7d4e00; }
+.text-amber-800 { color: #633c01; }
+.text-emerald-500 { color: #2da44e; }
+.text-emerald-600 { color: #1a7f37; }
+.text-emerald-700 { color: #116329; }
+.text-emerald-800 { color: #0d4a1e; }
+.text-blue-500 { color: #0969da; }
+.text-blue-600 { color: #0550ae; }
+.text-blue-700 { color: #033d8b; }
+.text-purple-500 { color: #8250df; }
+.text-purple-600 { color: #6639ba; }
+.text-purple-700 { color: #51258f; }
+.text-indigo-500 { color: #6366f1; }
+
+/* Colors — Backgrounds */
+.bg-transparent { background-color: transparent; }
+.bg-white { background-color: #ffffff; }
+.bg-white\/90 { background-color: rgba(255, 255, 255, 0.9); }
+.bg-blue-600 { background-color: #0969da; }
+.bg-red-600 { background-color: #cf222e; }
+.bg-gray-50 { background-color: #f6f8fa; }
+.bg-gray-100 { background-color: #eaeef2; }
+.bg-gray-300 { background-color: #afb8c1; }
+.bg-red-50 { background-color: #ffebe9; }
+.bg-amber-50 { background-color: #fff8c5; }
+.bg-amber-100 { background-color: #fae17d; }
+.bg-blue-50 { background-color: #ddf4ff; }
+.bg-emerald-50 { background-color: #dafbe1; }
+.bg-purple-50 { background-color: #fbefff; }
+
+/* Borders & Dividers */
+.border { border: 1px solid var(--rp-border); }
+.border-t { border-top: 1px solid var(--rp-border); }
+.border-b { border-bottom: 1px solid var(--rp-border); }
+.border-dashed { border-style: dashed; }
+.border-l-2 { border-left-width: 2px; }
+.border-gray-200 { border-color: #d0d7de; }
+.border-gray-300 { border-color: #afb8c1; }
+.border-red-200 { border-color: #ff8182; }
+.border-red-300 { border-color: #fd8c73; }
+.border-red-400 { border-color: #f85149; }
+.border-amber-200 { border-color: #d4a72c; }
+.border-amber-300 { border-color: #bf8700; }
+.border-emerald-200 { border-color: #4ac26b; }
+.border-emerald-300 { border-color: #2da44e; }
+.border-blue-200 { border-color: #54aeff; }
+.border-purple-200 { border-color: #c297ff; }
+.divide-y > * + * { border-top: 1px solid var(--rp-border); }
+.divide-x > * + * { border-left: 1px solid var(--rp-border); }
+
+/* Rounded Corners */
+.rounded-sm { border-radius: 2px; }
+.rounded { border-radius: 4px; }
+.rounded-md { border-radius: 6px; }
+.rounded-lg { border-radius: 8px; }
+.rounded-full { border-radius: 9999px; }
+
+/* Positioning & Overflow */
+.relative { position: relative; }
+.absolute { position: absolute; }
+.left-2 { left: 0.5rem; }
+.right-2 { right: 0.5rem; }
+.bottom-2 { bottom: 0.5rem; }
+.bottom-full { bottom: 100%; }
+.z-30 { z-index: 30; }
+.overflow-hidden { overflow: hidden; }
+.overflow-x-auto { overflow-x: auto; }
+.overflow-y-auto { overflow-y: auto; }
+
+/* Effects & Utility */
+.transition { transition: all 0.15s ease-in-out; }
+.opacity-80 { opacity: 0.8; }
+.shadow-sm { box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05); }
+.shadow-xl { box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1); }
+.cursor-pointer { cursor: pointer; }
+.select-none { user-select: none; }
+.resize-none { resize: none; }
+.outline-none { outline: none; }
+.pointer-events-none { pointer-events: none; }
+
+/* Interactive Hover & States */
+.hover\:bg-gray-50:hover { background-color: #f6f8fa; }
+.hover\:bg-gray-100:hover { background-color: #eaeef2; }
+.hover\:bg-red-700:hover { background-color: #a40e26; }
+.hover\:text-gray-600:hover { color: #424a53; }
+.hover\:text-gray-700:hover { color: #32383f; }
+.hover\:text-gray-900:hover { color: #1f2328; }
+.hover\:text-red-600:hover { color: #cf222e; }
+.active\:scale-95:active { transform: scale(0.95); }
+.disabled\:opacity-40:disabled { opacity: 0.4; }
+.disabled\:cursor-not-allowed:disabled { cursor: not-allowed; }
+
+/* Keyframe animations */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+.animate-spin { animation: spin 1s linear infinite; }
+.animate-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+
+/* Classes used by the components that were missing (same palette as the rest of this file) */
+.mb-1 { margin-bottom: 0.25rem; }
+.bg-emerald-600 { background-color: #1a7f37; }
+.border-blue-300 { border-color: #218bff; }
+.text-blue-800 { color: #0a3069; }
+.hover\:bg-gray-200:hover { background-color: #d0d7de; }
+.first\:pt-0:first-child { padding-top: 0; }
+.last\:pb-0:last-child { padding-bottom: 0; }
