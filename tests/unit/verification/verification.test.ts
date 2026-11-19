@@ -471,10 +471,10 @@ test('live execution: mid-flight AbortSignal after process starts reports status
   const service = createVerificationService(fixtureRoot);
   const controller = new AbortController();
 
-  // Cancel 500 ms into execution while pytest is actively running the full fixture suite
+  // Cancel mid-flight while pytest is actively running the full fixture suite (50 ms is within execution on both Linux and Windows)
   const timer = setTimeout(() => {
     controller.abort();
-  }, 500);
+  }, 50);
 
   const report = await service.verify({
     requestId: 'req-midflight-cancel',
