@@ -20,6 +20,8 @@ export interface DiffReviewProps {
   onApply: () => void;
   onUndo: () => void;
   isApplied: boolean;
+  /** Opens VS Code's side-by-side diff (current file vs proposed content) for one file. */
+  onOpenDiff?: (path: string) => void;
 }
 
 export const DiffReview: React.FC<DiffReviewProps> = ({
@@ -29,6 +31,7 @@ export const DiffReview: React.FC<DiffReviewProps> = ({
   onApply,
   onUndo,
   isApplied,
+  onOpenDiff,
 }) => {
   const hasAccepted = Array.from(decisions.values()).some((d) => d === 'accept');
   const totalHunks = files.reduce((acc, f) => acc + f.hunks.length, 0);
@@ -79,16 +82,33 @@ export const DiffReview: React.FC<DiffReviewProps> = ({
                 {file.path}
               </span>
             </div>
-            <span
-              className="font-mono text-[11px] px-2 py-0.5 rounded border"
-              style={{
-                backgroundColor: 'var(--vscode-editor-background, #ffffff)',
-                borderColor: 'var(--vscode-panel-border, #d0d7de)',
-                color: 'var(--vscode-descriptionForeground, #57606a)',
-              }}
-            >
-              {file.hunks.length} hunk{file.hunks.length === 1 ? '' : 's'}
-            </span>
+            <div className="flex items-center gap-2">
+              {onOpenDiff && (
+                <button
+                  type="button"
+                  onClick={() => onOpenDiff(file.path)}
+                  aria-label={`Open ${file.path} in the VS Code diff view`}
+                  className="cursor-pointer px-2 py-0.5 rounded text-[11px] font-mono border transition active:scale-95"
+                  style={{
+                    backgroundColor: 'var(--vscode-button-secondaryBackground, #eaeef2)',
+                    color: 'var(--vscode-button-secondaryForeground, #24292f)',
+                    borderColor: 'var(--vscode-panel-border, #d0d7de)',
+                  }}
+                >
+                  Open diff
+                </button>
+              )}
+              <span
+                className="font-mono text-[11px] px-2 py-0.5 rounded border"
+                style={{
+                  backgroundColor: 'var(--vscode-editor-background, #ffffff)',
+                  borderColor: 'var(--vscode-panel-border, #d0d7de)',
+                  color: 'var(--vscode-descriptionForeground, #57606a)',
+                }}
+              >
+                {file.hunks.length} hunk{file.hunks.length === 1 ? '' : 's'}
+              </span>
+            </div>
           </div>
 
           {/* Hunk Review List */}

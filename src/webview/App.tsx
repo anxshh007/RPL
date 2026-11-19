@@ -15,24 +15,24 @@ import {
   IconX,
 } from './components';
 import type { ChangePlan, ImpactReport, VerificationReport, RepoPilotEvent } from '../shared/contracts';
+import { isPlanApplied } from './state/bridgeState';
+import { getStatusBadge, isAgentRunning } from './state/agentStatus';
 
 export const App: React.FC = () => {
+  const { state, submitInstruction, cancelRequest, applyHunks, undoHunks, openDiff } = useExtensionBridge();
   const {
     workspace,
     events,
-    currentRequestId,
+    activeRequestId,
+    runningRequestId,
     agentState,
     errorMessage,
-    warningMessage,
+    warnings,
     streamingDelta,
     lastApplyResult,
     lastUndoResult,
     verificationTests,
-    submitInstruction,
-    cancelRequest,
-    applyHunks,
-    undoHunks,
-  } = useExtensionBridge();
+  } = state;
 
   const [decisions, setDecisions] = useState<Map<string, 'accept' | 'reject'>>(new Map());
 
@@ -85,8 +85,8 @@ export const App: React.FC = () => {
     return steps;
   }, [events]);
 
-  // Application state derived directly from host events (review item 2)
-  const isApplied = lastApplyResult?.status === 'applied' && lastUndoResult?.status !== 'undone';
+  // Application state derived from host events; reset for every new request
+  const isApplied = isPlanApplied(state);
 
   const handleDecision = (path: string, hunkId: string, decision: 'accept' | 'reject') => {
     setDecisions((prev) => {
@@ -97,8 +97,8 @@ export const App: React.FC = () => {
   };
 
   const handleApply = () => {
-    if (!currentRequestId && !changePlan) return;
-    const reqId = currentRequestId || changePlan?.requestId || '';
+    const reqId = activeRequestId || changePlan?.requestId;
+    if (!reqId) return;
     const decisionList = Array.from(decisions.entries()).map(([key, decision]) => {
       const { path, hunkId } = parseDecisionKey(key);
       return { path, hunkId, decision };
@@ -108,31 +108,17 @@ export const App: React.FC = () => {
   };
 
   const handleUndo = () => {
-    if (!currentRequestId && !changePlan) return;
-    const reqId = currentRequestId || changePlan?.requestId || '';
+    const reqId = activeRequestId || changePlan?.requestId;
+    if (!reqId) return;
     // Send undo request to host; isApplied updates upon receiving change.undone event
     undoHunks(reqId);
   };
 
-  const isRunning = !['idle', 'completed', 'cancelled', 'error'].includes(agentState);
+  const isRunning = isAgentRunning(agentState);
 
-  const getStatusBadge = (state: string) => {
-    switch (state) {
-      case 'idle':
-        return { bg: '#f6f8fa', text: '#57606a', border: '#d0d7de' };
-      case 'executing':
-      case 'planning':
-      case 'verifying':
-      case 'retrieving_context':
-      case 'analysing_impact':
-        return { bg: '#dafbe1', text: '#1a7f37', border: '#4ac26b' };
-      case 'error':
-        return { bg: '#ffebe9', text: '#cf222e', border: '#ff8182' };
-      case 'completed':
-        return { bg: '#ddf4ff', text: '#0969da', border: '#54aeff' };
-      default:
-        return { bg: '#f6f8fa', text: '#57606a', border: '#d0d7de' };
-    }
+  const handleOpenDiff = (path: string) => {
+    const reqId = activeRequestId || changePlan?.requestId;
+    if (reqId) openDiff(reqId, path);
   };
 
   const statusColors = getStatusBadge(agentState);
@@ -190,11 +176,15 @@ export const App: React.FC = () => {
           </div>
         )}
 
-        {/* Warning Alert (agent.warning) */}
-        {warningMessage && (
-          <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center gap-2 font-mono shadow-sm">
-            <span className="font-bold flex-shrink-0">⚠️ Warning:</span>
-            <span>{warningMessage}</span>
+        {/* Warnings for this request (agent.warning), all of them, in order */}
+        {warnings.length > 0 && (
+          <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs font-mono shadow-sm space-y-1">
+            {warnings.map((w, i) => (
+              <div key={i} className="flex items-start gap-2">
+                <span className="font-bold flex-shrink-0">⚠️ Warning:</span>
+                <span>{w}</span>
+              </div>
+            ))}
           </div>
         )}
 
@@ -282,6 +272,7 @@ export const App: React.FC = () => {
             onApply={handleApply}
             onUndo={handleUndo}
             isApplied={isApplied}
+            onOpenDiff={handleOpenDiff}
           />
         )}
 
@@ -295,7 +286,7 @@ export const App: React.FC = () => {
         <div className="pt-1">
           <PromptInput
             onSubmit={(instr, mode) => submitInstruction(instr, mode)}
-            onCancel={() => currentRequestId && cancelRequest(currentRequestId)}
+            onCancel={() => runningRequestId && cancelRequest(runningRequestId)}
             isRunning={isRunning}
           />
         </div>

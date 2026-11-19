@@ -147,7 +147,8 @@ test('full run: context → impact → TrueForge tools → proposal → apply �
   const decisions = plan.files.flatMap((f) => f.hunks.map((h) => ({ path: f.path, hunkId: h.hunkId, decision: 'accept' as const })));
   const applied = await agent.applyDecisions('e2e-1', decisions);
   assert.equal(applied.status, 'applied');
-  assert.equal(fs.readFileSync(path.join(root, HELPER), 'utf-8'), NEW_HELPER);
+  // The edit service keeps the file's own line endings (the fixture is CRLF on Windows checkouts).
+  assert.equal(fs.readFileSync(path.join(root, HELPER), 'utf-8').replace(/\r\n/g, '\n'), NEW_HELPER);
   assert.ok(!events.some((e) => e.type === 'verification.started'), 'no test run before approval');
 
   // User approves the test run: real pytest through TestSheriff.

@@ -272,3 +272,12 @@ html, body {
 }
 .animate-spin { animation: spin 1s linear infinite; }
 .animate-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+
+/* Classes used by the components that were missing (same palette as the rest of this file) */
+.mb-1 { margin-bottom: 0.25rem; }
+.bg-emerald-600 { background-color: #1a7f37; }
+.border-blue-300 { border-color: #218bff; }
+.text-blue-800 { color: #0a3069; }
+.hover\:bg-gray-200:hover { background-color: #d0d7de; }
+.first\:pt-0:first-child { padding-top: 0; }
+.last\:pb-0:last-child { padding-bottom: 0; }

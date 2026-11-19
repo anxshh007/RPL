@@ -1,14 +1,5 @@
 import React, { useState, useRef } from 'react';
-import {
-  IconZap,
-  IconSearch,
-  IconFlask,
-  IconSliders,
-  IconFile,
-  IconFileCode,
-  IconSparkles,
-  IconX,
-} from './Icons';
+import { IconFile, IconFileCode, IconSparkles, IconX } from './Icons';
 
 export interface PromptInputProps {
   onSubmit: (instruction: string, mode: 'inline' | 'agent') => void;
@@ -21,7 +12,7 @@ interface DropdownItem {
   label: string;
   detail: string;
   icon: React.ReactNode;
-  category: 'slash' | 'mention';
+  category: 'mention';
 }
 
 export const PromptInput: React.FC<PromptInputProps> = ({
@@ -31,26 +22,18 @@ export const PromptInput: React.FC<PromptInputProps> = ({
 }) => {
   const [instruction, setInstruction] = useState('');
   const [mode, setMode] = useState<'inline' | 'agent'>('agent');
-  const [dropdownType, setDropdownType] = useState<'slash' | 'mention' | null>(null);
+  const [dropdownType, setDropdownType] = useState<'mention' | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const slashCommands: DropdownItem[] = [
-    { key: '/ponytail-review', label: '/ponytail-review', detail: 'Senior dev review of diff & tests', icon: <IconZap size={14} className="text-amber-500" />, category: 'slash' },
-    { key: '/ponytail-audit', label: '/ponytail-audit', detail: 'Full repository health & risk audit', icon: <IconSearch size={14} className="text-blue-500" />, category: 'slash' },
-    { key: '/verify', label: '/verify', detail: 'Run TestSheriff pytest validation suite', icon: <IconFlask size={14} className="text-purple-500" />, category: 'slash' },
-    { key: '/ponytail', label: '/ponytail [lite|full|ultra]', detail: 'Set ponytail engine intensity', icon: <IconSliders size={14} className="text-indigo-500" />, category: 'slash' },
-  ];
-
+  // Only the two mention prefixes the extension understands (buildRequest parses @file: and @symbol:).
+  // No fixed example paths: the open workspace can be anything.
   const mentionItems: DropdownItem[] = [
-    { key: '@file:src/flask/helpers.py', label: '@file:helpers.py', detail: 'src/flask/helpers.py (get_debug_flag)', icon: <IconFile size={14} className="text-blue-500" />, category: 'mention' },
-    { key: '@file:src/flask/cli.py', label: '@file:cli.py', detail: 'src/flask/cli.py (CLI command group)', icon: <IconFile size={14} className="text-blue-500" />, category: 'mention' },
-    { key: '@file:tests/test_cli.py', label: '@file:test_cli.py', detail: 'tests/test_cli.py (Pytest verification)', icon: <IconFlask size={14} className="text-purple-500" />, category: 'mention' },
-    { key: '@symbol:get_debug_flag', label: '@symbol:get_debug_flag', detail: 'Function in helpers.py', icon: <IconFileCode size={14} className="text-emerald-500" />, category: 'mention' },
-    { key: '@symbol:FlaskGroup', label: '@symbol:FlaskGroup', detail: 'Class in cli.py', icon: <IconFileCode size={14} className="text-emerald-500" />, category: 'mention' },
+    { key: '@file:', label: '@file:', detail: 'Point at a workspace file, e.g. @file:src/app.py', icon: <IconFile size={14} className="text-blue-500" />, category: 'mention' },
+    { key: '@symbol:', label: '@symbol:', detail: 'Point at a function or class, e.g. @symbol:create_app', icon: <IconFileCode size={14} className="text-emerald-500" />, category: 'mention' },
   ];
 
-  const activeItems = dropdownType === 'slash' ? slashCommands : dropdownType === 'mention' ? mentionItems : [];
+  const activeItems = dropdownType === 'mention' ? mentionItems : [];
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value;
@@ -60,10 +43,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
     const textBefore = val.slice(0, cursorPos);
     const lastWord = textBefore.split(/\s+/).pop() || '';
 
-    if (lastWord.startsWith('/')) {
-      setDropdownType('slash');
-      setSelectedIndex(0);
-    } else if (lastWord.startsWith('@')) {
+    if (lastWord.startsWith('@') && !lastWord.includes(':')) {
       setDropdownType('mention');
       setSelectedIndex(0);
     } else {
@@ -79,7 +59,8 @@ export const PromptInput: React.FC<PromptInputProps> = ({
     const words = textBefore.split(/\s+/);
     words.pop();
     const newPrefix = words.length > 0 ? words.join(' ') + ' ' : '';
-    const newText = `${newPrefix}${item.key} ${textAfter}`;
+    // A prefix such as "@file:" is completed by typing the path, so no space after it.
+    const newText = `${newPrefix}${item.key}${item.key.endsWith(':') ? '' : ' '}${textAfter}`;
 
     setInstruction(newText);
     setDropdownType(null);
@@ -137,7 +118,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
       {dropdownType && activeItems.length > 0 && (
         <div
           role="listbox"
-          aria-label={dropdownType === 'slash' ? 'Slash commands' : 'Context mentions'}
+          aria-label="Context mentions"
           className="absolute left-2 right-2 bottom-full mb-1.5 rounded-lg border shadow-xl overflow-hidden z-30 max-h-52 overflow-y-auto divide-y font-sans"
           style={{
             backgroundColor: 'var(--vscode-editor-background, #ffffff)',
@@ -151,7 +132,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
               color: 'var(--vscode-descriptionForeground, #57606a)',
             }}
           >
-            <span>{dropdownType === 'slash' ? 'SLASH COMMANDS & SKILLS' : 'FILE & SYMBOL CONTEXT (@)'}</span>
+            <span>FILE &amp; SYMBOL CONTEXT (@)</span>
             <span>↑↓ navigate &bull; Enter select</span>
           </div>
           {activeItems.map((item, idx) => (
@@ -183,7 +164,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
         value={instruction}
         onChange={handleTextChange}
         onKeyDown={handleKeyDown}
-        placeholder="Type instruction, / for skills (/verify, /ponytail-review), @ for files..."
+        placeholder="Type an instruction. Use @file:path or @symbol:name to point at code…"
         aria-label="Agent instruction prompt"
         className="w-full bg-transparent text-xs font-mono outline-none resize-none leading-relaxed"
         style={{
@@ -198,23 +179,6 @@ export const PromptInput: React.FC<PromptInputProps> = ({
       >
         {/* Quick Helper Chips */}
         <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => {
-              setInstruction((prev) => (prev ? prev + ' /' : '/'));
-              setDropdownType('slash');
-              textareaRef.current?.focus();
-            }}
-            aria-label="Insert slash command trigger"
-            className="cursor-pointer px-2 py-0.5 rounded text-[11px] font-mono border transition active:scale-95"
-            style={{
-              backgroundColor: 'var(--vscode-button-secondaryBackground, #eaeef2)',
-              color: 'var(--vscode-button-secondaryForeground, #24292f)',
-              borderColor: 'var(--vscode-panel-border, #d0d7de)',
-            }}
-          >
-            / skills
-          </button>
           <button
             type="button"
             onClick={() => {

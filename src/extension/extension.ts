@@ -5,8 +5,11 @@ import * as vscode from 'vscode';
 import { createRepoPilot, RepoPilotController } from '../agent';
 import { ChangeRequest, HostToWebview, isWebviewToHost } from '../shared/contracts';
 import { renderWebviewHtml, renderPlaceholderHtml } from './webview-html';
+import { ProposedPlans } from './proposed-plans';
+import { openProposedDiff, registerProposedContentProvider } from './proposed-diff';
 
 let panel: vscode.WebviewPanel | undefined;
+const proposedPlans = new ProposedPlans();
 
 export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel('RepoPilot AI');
@@ -32,7 +35,9 @@ export function activate(context: vscode.ExtensionContext): void {
   // Forward every agent event to the log and the panel.
   context.subscriptions.push(
     output,
+    registerProposedContentProvider(proposedPlans),
     controller.onEvent((event) => {
+      proposedPlans.record(event); // remembered for "Open diff"
       output.appendLine(`[${event.requestId}] ${event.type}${'message' in event ? ': ' + event.message : ''}`);
       post({ type: 'host.event', event });
     }),
@@ -129,7 +134,7 @@ function openPanel(context: vscode.ExtensionContext, controller: RepoPilotContro
           await controller.undo(raw.requestId);
           break;
         case 'ui.openDiff':
-          // TODO(Member 5): open vscode.diff for the proposed file via the edit service.
+          await openProposedDiff(proposedPlans, raw.requestId, raw.path);
           break;
       }
     },
