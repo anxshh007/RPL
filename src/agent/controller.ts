@@ -1,8 +1,17 @@
 // OWNER: Member 1 — central orchestration (brief §5 Phase C). Pure TS: no "vscode" import.
-// Implements the request lifecycle skeleton. The TrueForge agent loop plugs in at PLANNING.
-import {
+//
+// submit():  starting → retrieving_context → analysing_impact → planning → review_required
+//            (or completed when nothing is proposed). ImpactLens runs before planning and again
+//            on the proposed files (D-14); an ImpactLens failure is a warning, never a blocker.
+// applyDecisions(): applies accepted hunks only (EditService), then runs TestSheriff unless
+//            repopilot.tests.requireApproval is on (D-12), in which case runVerification() is
+//            called after the user agrees.
+// cancel():  aborts the run and discards the pending plan; no file is changed.
+import type {
   AgentController,
+  AgentState,
   ApplyResult,
+  ChangePlan,
   ChangeRequest,
   Disposable,
   EditService,
@@ -12,22 +21,43 @@ import {
   RepoPilotEvent,
   RepositoryIntelligence,
   UndoResult,
+  VerificationReport,
   VerificationService,
-  toSafeError,
 } from '../shared/contracts';
+import { toSafeError } from '../shared/contracts';
+import { CancellationError, isAbortLike } from './errors';
+import type { AgentPlanner } from './planner';
 
 export interface AgentDependencies {
   repository: RepositoryIntelligence;
   impact: ImpactAnalyser;
   verification: VerificationService;
   edits: EditService;
+  /** The TrueForge agent loop. Without it, submit() reports that planning is not configured. */
+  planner?: AgentPlanner;
+}
+
+export interface ControllerOptions {
+  /** When set, repository.initialize(workspaceRoot) runs once before the first request. */
+  workspaceRoot?: string;
+  /** D-12: true (default) = tests run only after runVerification() is called. */
+  requireTestApproval?: boolean;
+  testTimeoutMs?: number;
+  /** Shown when no planner is configured (e.g. repopilot.trueforge.baseUrl is empty). */
+  plannerUnavailableReason?: string;
 }
 
 export class RepoPilotController implements AgentController {
   private readonly listeners = new Set<(e: RepoPilotEvent) => void>();
   private readonly active = new Map<string, AbortController>();
+  private readonly plans = new Map<string, ChangePlan>();
+  private readonly applied = new Map<string, ApplyResult>();
+  private initialized?: Promise<void>;
 
-  constructor(private readonly deps: AgentDependencies) {}
+  constructor(
+    private readonly deps: AgentDependencies,
+    private readonly options: ControllerOptions = {},
+  ) {}
 
   onEvent(listener: (e: RepoPilotEvent) => void): Disposable {
     this.listeners.add(listener);
@@ -39,45 +69,67 @@ export class RepoPilotController implements AgentController {
   }
 
   async submit(request: ChangeRequest): Promise<void> {
-    const abort = new AbortController();
-    this.active.set(request.requestId, abort);
     const { requestId } = request;
+    if (this.active.has(requestId)) {
+      this.emit({ type: 'agent.warning', requestId, message: 'This request is already running.' });
+      return;
+    }
+    const abort = new AbortController();
+    this.active.set(requestId, abort);
     const { signal } = abort;
 
     try {
       this.status(requestId, 'starting', 'Request received.');
+      await this.ensureInitialized();
+      this.throwIfCancelled(requestId, signal);
 
       // 1. Context (Member 2)
       this.status(requestId, 'retrieving_context', 'Retrieving repository context…');
       const context = await this.deps.repository.getContext(request, signal);
-      this.throwIfCancelled(signal);
+      this.throwIfCancelled(requestId, signal);
       this.emit({ type: 'context.ready', requestId, context });
 
-      // 2. Impact before planning (Member 3) — optional: failure is a warning, not a blocker
+      // 2. Impact before planning (Member 3)
       this.status(requestId, 'analysing_impact', 'Analysing impact…');
-      let impact: ImpactReport | undefined;
-      try {
-        impact = await this.deps.impact.analyseImpact(request, context, [], signal);
-        this.emit({ type: 'impact.ready', requestId, report: impact });
-      } catch (err) {
-        this.throwIfCancelled(signal);
-        this.emit({ type: 'agent.warning', requestId, message: `ImpactLens unavailable: ${toSafeError(err).message}` });
-      }
-      this.throwIfCancelled(signal);
+      let impact = await this.tryImpact(request, context, [], signal);
+      this.throwIfCancelled(requestId, signal);
 
-      // 3. Planning — TODO(Member 1): TrueForge session + MCP tool loop goes here.
-      //    It must end with this.deps.edits.propose(...) and emit 'change.proposed',
-      //    then wait for applyDecisions() — never write to disk directly.
-      //    Per DECISIONS D-14, call impact.analyseImpact again with the proposed file paths.
+      // 3. Planning (TrueForge agent loop)
       this.status(requestId, 'planning', 'Planning…');
-      this.emit({ type: 'agent.warning', requestId, message: 'Agent loop not implemented yet: no changes proposed.' });
-      this.status(requestId, 'completed', 'Finished (stub pipeline).');
+      if (!this.deps.planner) {
+        this.emit({
+          type: 'agent.warning',
+          requestId,
+          message: this.options.plannerUnavailableReason ?? 'Agent loop is not configured: no changes proposed.',
+        });
+        this.status(requestId, 'completed', 'Finished without proposing changes.');
+        return;
+      }
+      const result = await this.deps.planner.plan({ request, context, impact, signal, emit: (e) => this.emit(e) });
+      this.throwIfCancelled(requestId, signal);
+
+      if (result.proposals.length === 0) {
+        this.emit({ type: 'agent.warning', requestId, message: 'The agent finished without proposing file changes.' });
+        this.status(requestId, 'completed', result.summary);
+        return;
+      }
+
+      // 4. Proposal (diff only) + second impact pass on the proposed files (D-14)
+      const plan = await this.deps.edits.propose(requestId, result.summary, result.proposals, result.rationale);
+      const second = await this.tryImpact(request, context, plan.files.map((f) => f.path), signal);
+      impact = second ?? impact;
+      this.throwIfCancelled(requestId, signal);
+      const reviewed: ChangePlan = impact ? { ...plan, impactReport: impact } : plan;
+      this.plans.set(requestId, reviewed);
+      this.emit({ type: 'change.proposed', requestId, plan: reviewed });
+      this.status(requestId, 'review_required', 'Review the proposed hunks. Nothing has been written.');
     } catch (err) {
-      const safe = toSafeError(err);
-      this.deps.edits.discard(requestId); // cancel/error before approval ⇒ no file changes
-      if (safe.kind === 'cancelled') {
+      this.deps.edits.discard(requestId); // cancel or error before approval ⇒ no file changes
+      this.plans.delete(requestId);
+      if (isAbortLike(err) || signal.aborted) {
         this.status(requestId, 'cancelled', 'Cancelled. No files were changed.');
       } else {
+        const safe = toSafeError(err);
         this.emit({ type: 'agent.error', requestId, error: safe });
         this.status(requestId, 'error', safe.message);
       }
@@ -87,31 +139,123 @@ export class RepoPilotController implements AgentController {
   }
 
   async applyDecisions(requestId: string, decisions: HunkDecision[]): Promise<ApplyResult> {
-    this.status(requestId, 'applying', 'Applying approved hunks…');
-    const result = await this.deps.edits.apply(requestId, decisions);
+    if (this.active.has(requestId)) {
+      const result: ApplyResult = {
+        requestId,
+        status: 'nothing_to_apply',
+        appliedPaths: [],
+        appliedHunkIds: [],
+        stalePaths: [],
+        message: 'The request is still running; wait for the proposal.',
+      };
+      this.emit({ type: 'change.applied', requestId, result });
+      return result;
+    }
+
+    this.status(requestId, 'applying', 'Applying accepted hunks…');
+    let result: ApplyResult;
+    try {
+      result = await this.deps.edits.apply(requestId, decisions);
+    } catch (err) {
+      result = { requestId, status: 'error', appliedPaths: [], appliedHunkIds: [], stalePaths: [], message: toSafeError(err).message };
+    }
     this.emit({ type: 'change.applied', requestId, result });
 
-    if (result.status === 'applied') {
-      this.status(requestId, 'verifying', 'Running relevant tests…');
-      this.emit({ type: 'verification.started', requestId, tests: [] });
-      const report = await this.deps.verification.verify({
-        requestId,
-        changedFiles: result.appliedPaths,
-        candidateTests: [],
-      });
-      this.emit({ type: 'verification.completed', requestId, report });
+    if (result.status !== 'applied') {
+      const state: AgentState = result.status === 'error' ? 'error' : 'review_required';
+      this.status(requestId, state, result.message ?? `Nothing was written (${result.status}).`);
+      return result;
     }
-    this.status(requestId, 'completed', `Apply finished: ${result.status}.`);
+
+    this.applied.set(requestId, result);
+    if (this.options.requireTestApproval ?? true) {
+      this.status(requestId, 'completed', `Applied ${result.appliedHunkIds.length} hunk(s). Tests not run yet: waiting for your approval.`);
+    } else {
+      await this.runVerification(requestId);
+    }
     return result;
   }
 
+  /** D-12: runs TestSheriff for the files applied in this request, after the user agreed. */
+  async runVerification(requestId: string): Promise<VerificationReport | undefined> {
+    const applied = this.applied.get(requestId);
+    if (!applied) {
+      this.emit({ type: 'agent.warning', requestId, message: 'No applied changes to verify for this request.' });
+      return undefined;
+    }
+    const candidates = this.plans.get(requestId)?.impactReport?.testCandidates ?? [];
+    this.status(requestId, 'verifying', 'Running relevant tests…');
+    this.emit({ type: 'verification.started', requestId, tests: candidates.map((c) => c.path) });
+    let report: VerificationReport;
+    try {
+      report = await this.deps.verification.verify({
+        requestId,
+        changedFiles: applied.appliedPaths,
+        candidateTests: candidates,
+        ...(this.options.testTimeoutMs ? { timeoutMs: this.options.testTimeoutMs } : {}),
+      });
+    } catch (err) {
+      const safe = toSafeError(err);
+      this.emit({ type: 'agent.error', requestId, error: safe });
+      this.status(requestId, 'error', safe.message);
+      return undefined;
+    }
+    this.emit({ type: 'verification.completed', requestId, report });
+    this.status(requestId, 'completed', `Tests: ${report.status.replace('_', ' ')}.`);
+    return report;
+  }
+
   async undo(requestId: string): Promise<UndoResult> {
-    const result = await this.deps.edits.undo(requestId);
+    let result: UndoResult;
+    try {
+      result = await this.deps.edits.undo(requestId);
+    } catch (err) {
+      result = { requestId, status: 'error', restoredPaths: [], message: toSafeError(err).message };
+    }
+    if (result.status === 'undone') {
+      this.applied.delete(requestId);
+    }
     this.emit({ type: 'change.undone', requestId, result });
     return result;
   }
 
-  private status(requestId: string, state: Extract<RepoPilotEvent, { type: 'agent.status' }>['state'], message: string) {
+  private ensureInitialized(): Promise<void> {
+    if (!this.options.workspaceRoot) {
+      return Promise.resolve();
+    }
+    this.initialized ??= this.deps.repository.initialize(this.options.workspaceRoot).catch((err) => {
+      this.initialized = undefined; // allow a retry on the next request
+      throw err;
+    });
+    return this.initialized;
+  }
+
+  private async tryImpact(
+    request: ChangeRequest,
+    context: Parameters<ImpactAnalyser['analyseImpact']>[1],
+    proposedFiles: string[],
+    signal: AbortSignal,
+  ): Promise<ImpactReport | undefined> {
+    try {
+      const report = await this.deps.impact.analyseImpact(request, context, proposedFiles, signal);
+      if (!signal.aborted) {
+        this.emit({ type: 'impact.ready', requestId: request.requestId, report });
+      }
+      return report;
+    } catch (err) {
+      if (signal.aborted) {
+        return undefined;
+      }
+      this.emit({
+        type: 'agent.warning',
+        requestId: request.requestId,
+        message: `ImpactLens unavailable: ${toSafeError(err).message}`,
+      });
+      return undefined;
+    }
+  }
+
+  private status(requestId: string, state: AgentState, message: string): void {
     this.emit({ type: 'agent.status', requestId, state, message });
   }
 
@@ -125,11 +269,9 @@ export class RepoPilotController implements AgentController {
     }
   }
 
-  private throwIfCancelled(signal: AbortSignal): void {
+  private throwIfCancelled(requestId: string, signal: AbortSignal): void {
     if (signal.aborted) {
-      const e = new Error('Request cancelled.');
-      e.name = 'AbortError';
-      throw e;
+      throw new CancellationError(requestId);
     }
   }
 }

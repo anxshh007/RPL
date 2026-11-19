@@ -7,6 +7,13 @@ import { createVerificationService } from '../../../src/verification';
 import { createEditService } from '../../../src/edits';
 import type { ChangeRequest, RepoPilotEvent, RepositoryIntelligence } from '../../../src/shared/contracts';
 import { createRepositoryIntelligence } from '../../../src/repository';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+
+// A real (empty) workspace folder: Member 1's factories need an explicit root (no process.cwd()).
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'repopilot-controller-'));
+process.on('exit', () => fs.rmSync(root, { recursive: true, force: true }));
 
 const req = (id: string): ChangeRequest => ({
   requestId: id,
@@ -18,7 +25,7 @@ const req = (id: string): ChangeRequest => ({
 
 test('emits context and impact before planning, ends completed', async () => {
   const events: RepoPilotEvent[] = [];
-  const agent = createRepoPilot();
+  const agent = createRepoPilot({ workspaceRoot: root });
   agent.onEvent((e) => events.push(e));
   await agent.submit(req('r1'));
   const types = events.map((e) => e.type);
@@ -32,8 +39,8 @@ test('ImpactLens failure is a warning, not a blocker', async () => {
   const agent = new RepoPilotController({
     repository: createRepositoryIntelligence(),
     impact: { analyseImpact: async () => { throw new Error('boom'); } },
-    verification: createVerificationService(),
-    edits: createEditService(),
+    verification: createVerificationService(root),
+    edits: createEditService(root),
   });
   agent.onEvent((e) => events.push(e));
   await agent.submit(req('r2'));
@@ -54,8 +61,8 @@ test('cancellation ends in "cancelled" with no proposal', async () => {
   const agent = new RepoPilotController({
     repository: slowRepo,
     impact: createImpactAnalyser(),
-    verification: createVerificationService(),
-    edits: createEditService(),
+    verification: createVerificationService(root),
+    edits: createEditService(root),
   });
   agent.onEvent((e) => events.push(e));
   const run = agent.submit(req('r3'));

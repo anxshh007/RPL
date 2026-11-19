@@ -2,16 +2,32 @@
 // (brief: docs/briefs/05_member5_vscode_ui.md). Domain logic stays in the owner modules;
 // this file only builds ChangeRequests, forwards UI actions and renders events.
 import * as vscode from 'vscode';
-import { createRepoPilot } from '../agent';
-import { AgentController, ChangeRequest, HostToWebview, isWebviewToHost } from '../shared/contracts';
+import { createRepoPilot, RepoPilotController } from '../agent';
+import { ChangeRequest, HostToWebview, isWebviewToHost } from '../shared/contracts';
 import { renderPlaceholderHtml } from './webview-html';
 
 let panel: vscode.WebviewPanel | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel('RepoPilot AI');
+  const workspace = vscode.workspace.workspaceFolders?.[0];
+  if (!workspace) {
+    // RepoPilot needs a folder: there is no process.cwd() fallback.
+    context.subscriptions.push(
+      output,
+      vscode.commands.registerCommand('repopilot.open', () => vscode.window.showWarningMessage('RepoPilot: open a folder first.')),
+      vscode.commands.registerCommand('repopilot.inlineEdit', () => vscode.window.showWarningMessage('RepoPilot: open a folder first.')),
+    );
+    return;
+  }
   const config = vscode.workspace.getConfiguration('repopilot');
-  const controller = createRepoPilot({ tokenBudget: config.get<number>('context.tokenBudget') });
+  const controller = createRepoPilot({
+    workspaceRoot: workspace.uri.fsPath,
+    tokenBudget: config.get<number>('context.tokenBudget'),
+    requireTestApproval: config.get<boolean>('tests.requireApproval', true),
+    testTimeoutMs: config.get<number>('tests.timeoutMs'),
+    trueforge: { baseUrl: config.get<string>('trueforge.baseUrl', '') },
+  });
 
   // Forward every agent event to the log and the panel.
   context.subscriptions.push(
@@ -46,7 +62,7 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 }
 
-function openPanel(context: vscode.ExtensionContext, controller: AgentController): void {
+function openPanel(context: vscode.ExtensionContext, controller: RepoPilotController): void {
   if (panel) {
     panel.reveal();
     return;
@@ -82,7 +98,23 @@ function openPanel(context: vscode.ExtensionContext, controller: AgentController
           controller.cancel(raw.requestId);
           break;
         case 'ui.applyDecisions':
-          await controller.applyDecisions(raw.requestId, raw.decisions);
+          {
+            const result = await controller.applyDecisions(raw.requestId, raw.decisions);
+            // D-12: ask before every TestSheriff run when repopilot.tests.requireApproval is on.
+            if (
+              result.status === 'applied' &&
+              vscode.workspace.getConfiguration('repopilot').get<boolean>('tests.requireApproval', true)
+            ) {
+              const choice = await vscode.window.showInformationMessage(
+                `RepoPilot applied ${result.appliedHunkIds.length} hunk(s). Run the relevant tests now?`,
+                'Run tests',
+                'Not now',
+              );
+              if (choice === 'Run tests') {
+                await controller.runVerification(raw.requestId);
+              }
+            }
+          }
           break;
         case 'ui.undo':
           await controller.undo(raw.requestId);

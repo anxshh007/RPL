@@ -41,7 +41,8 @@ test('context respects the configured budget field', async () => {
 });
 
 test('edit service applies nothing without accepted hunks', async () => {
-  const edits = createEditService();
+  // The real edit service needs an explicit workspace root (no process.cwd() fallback).
+  const edits = createEditService(require('node:fs').mkdtempSync(require('node:path').join(require('node:os').tmpdir(), 'repopilot-contracts-')));
   await edits.propose('req-1', 'x', [{ path: 'a.py', proposedContent: 'print(1)\n' }], []);
   const res = await edits.apply('req-1', [{ path: 'a.py', hunkId: 'h1', decision: 'reject' }]);
   assert.equal(res.status, 'nothing_to_apply');
