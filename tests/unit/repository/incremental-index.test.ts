@@ -19,6 +19,28 @@ async function writeWorkspaceFile(
   await writeFile(file, content);
 }
 
+async function renameWithRetry(
+  from: string,
+  to: string,
+  tries = 5,
+  delayMs = 200,
+): Promise<void> {
+  for (let i = 1; ; i++) {
+    try {
+      await rename(from, to);
+      return;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+
+      if (i >= tries || (code !== 'EPERM' && code !== 'EBUSY')) {
+        throw err;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+}
+
 describe('repository incremental indexing', () => {
   it('blocks stale symbol results and refreshes changed Python files', async () => {
     const root = await createWorkspace();
@@ -91,10 +113,10 @@ describe('repository incremental indexing', () => {
       await repository.findSymbol('current');
 
       repository.invalidate(['src/app.py']);
-      await rename(root, movedRoot);
+      await renameWithRetry(root, movedRoot);
       await assert.rejects(repository.reindex(['src/app.py']));
       await assert.rejects(repository.findSymbol('current'), /call reindex/);
-      await rename(movedRoot, root);
+      await renameWithRetry(movedRoot, root);
 
       await repository.reindex(['src/app.py']);
       assert.equal((await repository.findSymbol('current')).length, 1);
