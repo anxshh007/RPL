@@ -2,7 +2,7 @@
 // (brief: docs/briefs/05_member5_vscode_ui.md). Domain logic stays in the owner modules;
 // this file only builds ChangeRequests, forwards UI actions and renders events.
 import * as vscode from 'vscode';
-import { createRepoPilot, RepoPilotController } from '../agent';
+import { createRepoPilot, generateConnectorToken, RepoPilotController } from '../agent';
 import { ChangeRequest, HostToWebview, isWebviewToHost } from '../shared/contracts';
 import { renderWebviewHtml, renderPlaceholderHtml } from './webview-html';
 import { ProposedPlans } from './proposed-plans';
@@ -11,8 +11,13 @@ import { openProposedDiff, registerProposedContentProvider } from './proposed-di
 let panel: vscode.WebviewPanel | undefined;
 const proposedPlans = new ProposedPlans();
 
-export function activate(context: vscode.ExtensionContext): void {
+/** Secret storage keys (encrypted by VS Code; never in settings.json). */
+const SECRET_API_KEY = 'repopilot.trueforge.apiKey';
+const SECRET_CONNECTOR_TOKEN = 'repopilot.mcp.connectorToken';
+
+export async function activate(context: vscode.ExtensionContext): Promise<void> {
   const output = vscode.window.createOutputChannel('RepoPilot AI');
+  registerTrueForgeCommands(context);
   const workspace = vscode.workspace.workspaceFolders?.[0];
   if (!workspace) {
     // RepoPilot needs a folder: there is no process.cwd() fallback.
@@ -24,13 +29,44 @@ export function activate(context: vscode.ExtensionContext): void {
     return;
   }
   const config = vscode.workspace.getConfiguration('repopilot');
+  const baseUrl = config.get<string>('trueforge.baseUrl', '').trim();
+  const apiKey = await context.secrets.get(SECRET_API_KEY);
   const controller = createRepoPilot({
     workspaceRoot: workspace.uri.fsPath,
     tokenBudget: config.get<number>('context.tokenBudget'),
     requireTestApproval: config.get<boolean>('tests.requireApproval', true),
     testTimeoutMs: config.get<number>('tests.timeoutMs'),
-    trueforge: { baseUrl: config.get<string>('trueforge.baseUrl', '') },
+    trueforge: {
+      baseUrl,
+      model: config.get<string>('trueforge.model', ''),
+      connectorName: config.get<string>('trueforge.connectorName', 'repopilot'),
+      ...(apiKey ? { apiKey } : {}),
+    },
+    // RepoPilot's tools for TrueForge, on 127.0.0.1 only, only when TrueForge is configured.
+    ...(baseUrl
+      ? {
+          mcpConnector: {
+            port: config.get<number>('mcp.port', 8791),
+            token: await connectorToken(context),
+            onReady: (url: string) => output.appendLine(`RepoPilot MCP connector listening at ${url}`),
+            onError: (err: Error) => {
+              output.appendLine(`RepoPilot MCP connector could not start: ${err.message}`);
+              void vscode.window.showWarningMessage(
+                `RepoPilot: the TrueForge connector could not start (${err.message}). Change "repopilot.mcp.port" and reload.`,
+              );
+            },
+          },
+        }
+      : {}),
   });
+  context.subscriptions.push(
+    { dispose: () => void controller.dispose() },
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration('repopilot.trueforge') || e.affectsConfiguration('repopilot.mcp')) {
+        void promptReload('RepoPilot settings changed.');
+      }
+    }),
+  );
 
   // Forward every agent event to the log and the panel.
   context.subscriptions.push(
@@ -63,6 +99,69 @@ export function activate(context: vscode.ExtensionContext): void {
           selectionRange: { startLine: sel.start.line + 1, endLine: sel.end.line + 1 },
         }),
       );
+    }),
+  );
+}
+
+/** The connector token: created once with a secure random generator, kept in secret storage. */
+async function connectorToken(context: vscode.ExtensionContext): Promise<string> {
+  let token = await context.secrets.get(SECRET_CONNECTOR_TOKEN);
+  if (!token) {
+    token = generateConnectorToken();
+    await context.secrets.store(SECRET_CONNECTOR_TOKEN, token);
+  }
+  return token;
+}
+
+async function promptReload(reason: string): Promise<void> {
+  const choice = await vscode.window.showInformationMessage(`${reason} Reload the window to apply.`, 'Reload Window');
+  if (choice === 'Reload Window') {
+    await vscode.commands.executeCommand('workbench.action.reloadWindow');
+  }
+}
+
+/** Commands that work with or without an open folder. */
+function registerTrueForgeCommands(context: vscode.ExtensionContext): void {
+  context.subscriptions.push(
+    vscode.commands.registerCommand('repopilot.setTrueForgeApiKey', async () => {
+      const value = await vscode.window.showInputBox({
+        prompt: 'TrueForge API key (stored encrypted by VS Code; leave empty to remove it)',
+        password: true,
+        ignoreFocusOut: true,
+      });
+      if (value === undefined) return;
+      if (value.trim()) {
+        await context.secrets.store(SECRET_API_KEY, value.trim());
+      } else {
+        await context.secrets.delete(SECRET_API_KEY);
+      }
+      await promptReload('TrueForge API key saved.');
+    }),
+
+    vscode.commands.registerCommand('repopilot.showConnectorSetup', async () => {
+      const config = vscode.workspace.getConfiguration('repopilot');
+      const name = config.get<string>('trueforge.connectorName', 'repopilot');
+      const url = `http://127.0.0.1:${config.get<number>('mcp.port', 8791)}/mcp`;
+      const token = await connectorToken(context);
+      const choice = await vscode.window.showInformationMessage(
+        `Add this in TrueForge → Settings → Connectors as a remote MCP server:\n\n` +
+          `Name: ${name}\nURL: ${url}\nAuth: header "Authorization" = "Bearer <token>" (use "Copy header value").\n\n` +
+          'The TrueForge server must run on this computer to reach 127.0.0.1.',
+        { modal: true },
+        'Copy URL',
+        'Copy header value',
+      );
+      if (choice === 'Copy URL') {
+        await vscode.env.clipboard.writeText(url);
+      } else if (choice === 'Copy header value') {
+        await vscode.env.clipboard.writeText(`Bearer ${token}`);
+        void vscode.window.showInformationMessage('Copied. Paste it as the value of the "Authorization" header.');
+      }
+    }),
+
+    vscode.commands.registerCommand('repopilot.rotateConnectorToken', async () => {
+      await context.secrets.store(SECRET_CONNECTOR_TOKEN, generateConnectorToken());
+      await promptReload('New connector token created. Update it in TrueForge (Settings → Connectors).');
     }),
   );
 }

@@ -8,8 +8,24 @@ export const TrueForgeConfigSchema = z.object({
   baseUrl: z.string().trim().default(''),
   /** Bearer token. Never logged or sent anywhere except the configured baseUrl. */
   apiKey: z.string().optional(),
-  /** Name of the agent configured on the TrueForge server. */
+  /** Name of a saved agent on the TrueForge server. Used only when `model` is empty. */
   agentName: z.string().min(1).default('repopilot-core'),
+  /**
+   * Model as "provider/model" (TrueForge's Model.name, e.g. "openai/gpt-5.2"). When set, RepoPilot
+   * sends its own agent definition with each session (instructions + the RepoPilot connector),
+   * so no agent has to be created on the server first.
+   */
+  model: z
+    .string()
+    .trim()
+    .regex(/^$|^[\w.-]+\/[\w.:-]+$/, 'model must look like "provider/model"')
+    .default(''),
+  /** Name of the RepoPilot MCP connector in TrueForge (Settings → Connectors). */
+  connectorName: z
+    .string()
+    .trim()
+    .regex(/^[a-z0-9][a-z0-9-]{0,62}$/, 'connectorName: lowercase letters, digits and dashes')
+    .default('repopilot'),
   timeoutMs: z.number().int().positive().max(600_000).default(120_000),
 }).strict();
 

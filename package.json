@@ -26,6 +26,18 @@
       {
         "command": "repopilot.inlineEdit",
         "title": "RepoPilot: Edit Selection"
+      },
+      {
+        "command": "repopilot.setTrueForgeApiKey",
+        "title": "RepoPilot: Set TrueForge API Key"
+      },
+      {
+        "command": "repopilot.showConnectorSetup",
+        "title": "RepoPilot: Show TrueForge Connector Setup"
+      },
+      {
+        "command": "repopilot.rotateConnectorToken",
+        "title": "RepoPilot: Create New Connector Token"
       }
     ],
     "keybindings": [
@@ -42,7 +54,25 @@
         "repopilot.trueforge.baseUrl": {
           "type": "string",
           "default": "",
-          "description": "TrueForge server URL. Member 1 sets the documented default after verifying it in the TrueForge docs."
+          "description": "TrueForge server URL, e.g. http://127.0.0.1:<port> for a TrueForge server on this computer. Empty = TrueForge off (RepoPilot still analyses, but proposes no changes)."
+        },
+        "repopilot.trueforge.model": {
+          "type": "string",
+          "default": "",
+          "pattern": "^$|^[\\w.-]+/[\\w.:-]+$",
+          "description": "Model as provider/model (see your TrueForge models list). When set, RepoPilot sends its own agent definition with each session. When empty, the saved TrueForge agent named \"repopilot-core\" is used."
+        },
+        "repopilot.trueforge.connectorName": {
+          "type": "string",
+          "default": "repopilot",
+          "description": "Name of the RepoPilot connector in TrueForge (Settings \u2192 Connectors)."
+        },
+        "repopilot.mcp.port": {
+          "type": "number",
+          "default": 8791,
+          "minimum": 1024,
+          "maximum": 65535,
+          "description": "Port of RepoPilot's MCP connector on 127.0.0.1 (only started when a TrueForge URL is set)."
         },
         "repopilot.context.tokenBudget": {
           "type": "number",
@@ -67,7 +97,7 @@
     "build": "npm run compile",
     "build:webview": "esbuild src/webview/index.tsx --bundle --sourcemap --outfile=out/src/webview/webview.js",
     "watch": "tsc -watch -p ./",
-    "test": "node --test out/tests/unit/shared/contracts.test.js out/tests/unit/agent/controller.test.js out/tests/unit/agent/pipeline.test.js out/tests/unit/agent/trueforge-client.test.js out/tests/unit/edits/edit-service.test.js out/tests/unit/mcp/tools.test.js out/tests/unit/repository/context-intelligence.test.js out/tests/unit/repository/dependency-index.test.js out/tests/unit/repository/file-metadata.test.js out/tests/unit/repository/incremental-index.test.js out/tests/unit/repository/path-safety.test.js out/tests/unit/repository/python-symbol-index.test.js out/tests/unit/repository/ripgrep-search.test.js out/tests/unit/repository/workspace-scanner.test.js out/tests/unit/repository/tools.test.js out/tests/unit/impact/fixtures.test.js out/tests/unit/impact/dependency-graph.test.js out/tests/unit/impact/impact-analyser.test.js out/tests/unit/impact/impact-rules.test.js out/tests/unit/impact/impact-report.test.js out/tests/unit/impact/index.test.js out/tests/unit/impact/graph-adapter.test.js out/tests/unit/impact/tools.test.js out/tests/unit/verification/verification.test.js out/tests/unit/webview/components.test.js out/tests/unit/webview/panel-state.test.js out/tests/unit/webview/display.test.js"
+    "test": "node --test out/tests/unit/shared/contracts.test.js out/tests/unit/agent/controller.test.js out/tests/unit/agent/pipeline.test.js out/tests/unit/agent/trueforge-client.test.js out/tests/unit/edits/edit-service.test.js out/tests/unit/mcp/tools.test.js out/tests/unit/repository/context-intelligence.test.js out/tests/unit/repository/dependency-index.test.js out/tests/unit/repository/file-metadata.test.js out/tests/unit/repository/incremental-index.test.js out/tests/unit/repository/path-safety.test.js out/tests/unit/repository/python-symbol-index.test.js out/tests/unit/repository/ripgrep-search.test.js out/tests/unit/repository/workspace-scanner.test.js out/tests/unit/repository/tools.test.js out/tests/unit/impact/fixtures.test.js out/tests/unit/impact/dependency-graph.test.js out/tests/unit/impact/impact-analyser.test.js out/tests/unit/impact/impact-rules.test.js out/tests/unit/impact/impact-report.test.js out/tests/unit/impact/index.test.js out/tests/unit/impact/graph-adapter.test.js out/tests/unit/impact/tools.test.js out/tests/unit/verification/verification.test.js out/tests/unit/webview/components.test.js out/tests/unit/webview/panel-state.test.js out/tests/unit/webview/display.test.js out/tests/unit/mcp/connector.test.js"
   },
   "devDependencies": {
     "@types/diff": "^7.0.2",

@@ -13,7 +13,7 @@ export interface TrueForgeSdk {
   server: { getCapabilities(options?: { abortSignal?: AbortSignal }): Promise<unknown> };
   sessions: {
     create(
-      body: { agent: { name: string }; metadata?: Record<string, string> },
+      body: { agent: TrueForgeApi.CreateSessionAgent; metadata?: Record<string, string> },
       options?: { abortSignal?: AbortSignal },
     ): Promise<{ data: { id: string } }>;
     createTurnStream(
@@ -68,10 +68,19 @@ export class TrueForgeClient {
     }
   }
 
-  async createSession(metadata: Record<string, string>, signal?: AbortSignal): Promise<string> {
+  /**
+   * Starts a session. `spec` is a full agent definition sent with the session; without it the
+   * saved agent named in settings (agentName) is used.
+   */
+  async createSession(
+    metadata: Record<string, string>,
+    signal?: AbortSignal,
+    spec?: TrueForgeApi.AgentSpec,
+  ): Promise<string> {
     try {
+      const agent: TrueForgeApi.CreateSessionAgent = spec ? { spec } : { name: this.config.agentName };
       const res = await (await this.loadSdk()).sessions.create(
-        { agent: { name: this.config.agentName }, metadata },
+        { agent, metadata },
         { abortSignal: signal },
       );
       if (!res?.data?.id) {

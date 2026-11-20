@@ -7,3 +7,8 @@ export { createRepoPilotTools } from './repoPilotTools';
 export type { RepoPilotToolDependencies } from './repoPilotTools';
 export { RepoPilotMcpServer, toCallToolResult } from './mcpServer';
 export { PathSecurityValidator } from './safety';
+export { createMcpProtocolServer } from './mcpServer';
+export { RepoPilotHttpMcpServer, generateConnectorToken, MCP_HTTP_PATH, MIN_TOKEN_LENGTH } from './httpServer';
+export type { McpHttpServerOptions } from './httpServer';
+export { ActiveRun } from './activeRun';
+export type { RunContext } from './activeRun';
