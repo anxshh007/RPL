@@ -174,8 +174,8 @@ export const DiffReview: React.FC<DiffReviewProps> = ({
                         <div
                           key={lineIdx}
                           style={{
-                            backgroundColor: isAdd ? 'rgba(46, 160, 67, 0.15)' : isDel ? 'rgba(248, 81, 73, 0.15)' : 'transparent',
-                            color: isAdd ? '#1a7f37' : isDel ? '#cf222e' : 'inherit',
+                            backgroundColor: isAdd ? 'var(--rp-diff-add-bg, rgba(46, 160, 67, 0.15))' : isDel ? 'var(--rp-diff-del-bg, rgba(248, 81, 73, 0.15))' : 'transparent',
+                            color: isAdd ? 'var(--rp-diff-add-text, #1a7f37)' : isDel ? 'var(--rp-diff-del-text, #cf222e)' : 'inherit',
                           }}
                           className="px-1 -mx-1 rounded-sm"
                         >

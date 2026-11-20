@@ -25,9 +25,9 @@ export const VerificationPanel: React.FC<VerificationPanelProps> = ({
       <div
         className="rounded-lg p-3 text-xs border shadow-sm font-sans"
         style={{
-          backgroundColor: '#faf5ff',
-          borderColor: '#e9d5ff',
-          color: '#6b21a8',
+          backgroundColor: 'var(--rp-verify-bg, #faf5ff)',
+          borderColor: 'var(--rp-verify-border, #e9d5ff)',
+          color: 'var(--rp-verify-text, #6b21a8)',
         }}
       >
         <div className="flex items-center gap-2 font-mono">

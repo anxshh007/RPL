@@ -345,35 +345,35 @@ test('event stream correctly handles change.applied and stale state', () => {
 
 // ──────────────── 3. ImpactPanel Report Rendering & Graph Mapping ────────────────
 
-test('getRiskColors returns semantic light theme palette values', () => {
+test('getRiskColors returns theme variables with the light palette as fallback', () => {
   const high = getRiskColors('high');
-  assert.equal(high.text, '#cf222e');
-  assert.equal(high.bg, '#ffebe9');
+  assert.equal(high.text, 'var(--rp-risk-high-text, #cf222e)');
+  assert.equal(high.bg, 'var(--rp-risk-high-bg, #ffebe9)');
 
   const med = getRiskColors('medium');
-  assert.equal(med.text, '#9a6700');
-  assert.equal(med.bg, '#fff8c5');
+  assert.equal(med.text, 'var(--rp-risk-medium-text, #9a6700)');
+  assert.equal(med.bg, 'var(--rp-risk-medium-bg, #fff8c5)');
 
   const low = getRiskColors('low');
-  assert.equal(low.text, '#0969da');
-  assert.equal(low.bg, '#ddf4ff');
+  assert.equal(low.text, 'var(--rp-risk-low-text, #0969da)');
+  assert.equal(low.bg, 'var(--rp-risk-low-bg, #ddf4ff)');
 
   const def = getRiskColors(undefined);
-  assert.equal(def.text, '#57606a');
+  assert.equal(def.text, 'var(--rp-risk-none-text, #57606a)');
 });
 
 test('getConfidenceBadge returns correct label and color tokens', () => {
   const high = getConfidenceBadge('high');
   assert.equal(high.label, 'High Conf.');
-  assert.equal(high.text, '#1a7f37');
+  assert.equal(high.text, 'var(--rp-conf-high-text, #1a7f37)');
 
   const med = getConfidenceBadge('medium');
   assert.equal(med.label, 'Med Conf.');
-  assert.equal(med.text, '#9a6700');
+  assert.equal(med.text, 'var(--rp-risk-medium-text, #9a6700)');
 
   const low = getConfidenceBadge('low');
   assert.equal(low.label, 'Low Conf.');
-  assert.equal(low.text, '#57606a');
+  assert.equal(low.text, 'var(--rp-risk-none-text, #57606a)');
 });
 
 test('buildImpactFlowGraph transforms sample report into valid React Flow nodes and edges', () => {
@@ -383,11 +383,11 @@ test('buildImpactFlowGraph transforms sample report into valid React Flow nodes 
   assert.equal(nodes.length, 6);
   const changedNode = nodes.find((n) => n.id === 'src/flask/helpers.py');
   assert.ok(changedNode);
-  assert.equal(changedNode.style?.backgroundColor, '#fbefff'); // Highlighted style for changed target
+  assert.equal(changedNode.style?.backgroundColor, 'var(--rp-changed-bg, #fbefff)'); // Highlighted style for changed target
 
   const highRiskNode = nodes.find((n) => n.id === 'src/flask/app.py');
   assert.ok(highRiskNode);
-  assert.equal(highRiskNode.style?.backgroundColor, '#ffebe9'); // High risk bg
+  assert.equal(highRiskNode.style?.backgroundColor, 'var(--rp-risk-high-bg, #ffebe9)'); // High risk bg
 
   // Verify edges and dashed inferred evidence
   assert.equal(edges.length, 5);

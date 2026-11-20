@@ -10,17 +10,17 @@ export function getStatusBadge(state: AgentState | string): { bg: string; text: 
     case 'planning':
     case 'applying':
     case 'verifying':
-      return { bg: '#dafbe1', text: '#1a7f37', border: '#4ac26b' };
+      return { bg: 'var(--rp-status-working-bg, #dafbe1)', text: 'var(--rp-status-working-text, #1a7f37)', border: 'var(--rp-status-working-border, #4ac26b)' };
     case 'review_required':
-      return { bg: '#fff8c5', text: '#9a6700', border: '#d4a72c' };
+      return { bg: 'var(--rp-status-review-bg, #fff8c5)', text: 'var(--rp-status-review-text, #9a6700)', border: 'var(--rp-status-review-border, #d4a72c)' };
     case 'completed':
-      return { bg: '#ddf4ff', text: '#0969da', border: '#54aeff' };
+      return { bg: 'var(--rp-status-done-bg, #ddf4ff)', text: 'var(--rp-status-done-text, #0969da)', border: 'var(--rp-status-done-border, #54aeff)' };
     case 'error':
-      return { bg: '#ffebe9', text: '#cf222e', border: '#ff8182' };
+      return { bg: 'var(--rp-status-error-bg, #ffebe9)', text: 'var(--rp-status-error-text, #cf222e)', border: 'var(--rp-status-error-border, #ff8182)' };
     case 'cancelled':
     case 'idle':
     default:
-      return { bg: '#f6f8fa', text: '#57606a', border: '#d0d7de' };
+      return { bg: 'var(--rp-status-idle-bg, #f6f8fa)', text: 'var(--rp-status-idle-text, #57606a)', border: 'var(--rp-status-idle-border, #d0d7de)' };
   }
 }
 
