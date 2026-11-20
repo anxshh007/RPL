@@ -59,6 +59,21 @@ export class RepoPilotController implements AgentController {
     private readonly options: ControllerOptions = {},
   ) {}
 
+  private readonly cleanups: Array<() => void | Promise<void>> = [];
+
+  /** Registers something to close when the controller is disposed (e.g. the MCP connector server). */
+  addCleanup(cleanup: () => void | Promise<void>): void {
+    this.cleanups.push(cleanup);
+  }
+
+  /** Cancels running requests and closes owned resources. */
+  async dispose(): Promise<void> {
+    for (const abort of this.active.values()) {
+      abort.abort();
+    }
+    await Promise.allSettled(this.cleanups.splice(0).map((c) => c()));
+  }
+
   onEvent(listener: (e: RepoPilotEvent) => void): Disposable {
     this.listeners.add(listener);
     return { dispose: () => this.listeners.delete(listener) };
