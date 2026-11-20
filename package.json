@@ -14,6 +14,8 @@
     "Programming Languages"
   ],
   "activationEvents": [
+    "onCommand:repopilot.open",
+    "onCommand:repopilot.inlineEdit",
     "onStartupFinished"
   ],
   "main": "./out/src/extension/extension.js",
@@ -22,6 +24,10 @@
       {
         "command": "repopilot.open",
         "title": "RepoPilot: Open Panel"
+      },
+      {
+        "command": "repopilot.selectModel",
+        "title": "RepoPilot: Switch Model"
       },
       {
         "command": "repopilot.inlineEdit",
@@ -51,6 +57,21 @@
     "configuration": {
       "title": "RepoPilot AI",
       "properties": {
+        "repopilot.openrouter.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "OpenRouter API Key for RepoPilot AI."
+        },
+        "repopilot.openrouter.model": {
+          "type": "string",
+          "default": "google/gemma-4-26b-a4b-it:free",
+          "description": "OpenRouter model identifier (default: google/gemma-4-26b-a4b-it:free)."
+        },
+        "repopilot.openrouter.baseUrl": {
+          "type": "string",
+          "default": "https://openrouter.ai/api/v1",
+          "description": "OpenRouter API Base URL (default: https://openrouter.ai/api/v1)."
+        },
         "repopilot.trueforge.baseUrl": {
           "type": "string",
           "default": "",

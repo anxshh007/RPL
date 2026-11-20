@@ -23,6 +23,7 @@ export interface BridgeState {
   lastApplyResult: ApplyResult | null;
   lastUndoResult: UndoResult | null;
   verificationTests: string[] | null;
+  activeModel?: string;
 }
 
 export const initialBridgeState: BridgeState = {
@@ -37,6 +38,7 @@ export const initialBridgeState: BridgeState = {
   lastApplyResult: null,
   lastUndoResult: null,
   verificationTests: null,
+  activeModel: 'google/gemma-4-26b-a4b-it:free',
 };
 
 const TERMINAL_STATES = new Set(['completed', 'cancelled', 'error']);
@@ -67,6 +69,9 @@ export function bridgeReducer(state: BridgeState, msg: BridgeAction): BridgeStat
 
     case 'host.error':
       return { ...state, errorMessage: msg.message };
+
+    case 'host.model':
+      return { ...state, activeModel: msg.model };
 
     case 'local.submit':
       // The user sent a new instruction: clear the old banners right away; the new

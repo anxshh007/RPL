@@ -13,13 +13,15 @@ export type WebviewToHost =
   | { type: 'ui.cancel'; requestId: string }
   | { type: 'ui.applyDecisions'; requestId: string; decisions: HunkDecision[] }
   | { type: 'ui.undo'; requestId: string }
-  | { type: 'ui.openDiff'; requestId: string; path: string };
+  | { type: 'ui.openDiff'; requestId: string; path: string }
+  | { type: 'ui.setModel'; model: string };
 
 /** Extension host → webview */
 export type HostToWebview =
   | { type: 'host.event'; event: RepoPilotEvent }
   | { type: 'host.workspace'; available: boolean; name?: string }
-  | { type: 'host.error'; message: string };
+  | { type: 'host.error'; message: string }
+  | { type: 'host.model'; model: string };
 
 const INBOUND_TYPES = new Set<WebviewToHost['type']>([
   'ui.ready',
@@ -28,6 +30,7 @@ const INBOUND_TYPES = new Set<WebviewToHost['type']>([
   'ui.applyDecisions',
   'ui.undo',
   'ui.openDiff',
+  'ui.setModel',
 ]);
 
 /** Minimal structural check. Member 1 replaces this with Zod schemas once Zod is installed. */

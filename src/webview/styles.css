@@ -272,6 +272,8 @@ html, body {
 }
 .animate-spin { animation: spin 1s linear infinite; }
 .animate-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+@keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+.text-shimmer { background: linear-gradient(90deg, #71717a 0%, #ffffff 50%, #71717a 100%); background-size: 200% 100%; -webkit-background-clip: text; -webkit-text-fill-color: transparent; animation: shimmer 2.5s infinite linear; }
 
 /* Classes used by the components that were missing (same palette as the rest of this file) */
 .mb-1 { margin-bottom: 0.25rem; }

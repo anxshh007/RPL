@@ -14,6 +14,8 @@ import { TrueForgePlanner } from './planner';
 import type { AgentPlanner } from './planner';
 import { TrueForgeClient } from './trueforgeClient';
 import type { TrueForgeSdk } from './trueforgeClient';
+import { OpenRouterPlanner } from './openrouterPlanner';
+import type { OpenRouterPlannerOptions } from './openrouterPlanner';
 
 export interface McpConnectorOptions {
   /** Port on 127.0.0.1 (0 = any free port, tests only). */
@@ -34,6 +36,8 @@ export interface RepoPilotOptions {
   requireTestApproval?: boolean;
   testTimeoutMs?: number;
   trueforge?: Partial<TrueForgeConfig>;
+  /** Use OpenRouter (Gemma 4 / Auto) instead of TrueForge */
+  openrouter?: boolean | OpenRouterPlannerOptions;
   /** Serves RepoPilot's tools to TrueForge as an HTTP MCP connector on 127.0.0.1. */
   mcpConnector?: McpConnectorOptions;
   /** Tests only: replaces the TrueForge SDK or the whole planner. */
@@ -60,6 +64,12 @@ export function createRepoPilot(options: RepoPilotOptions): RepoPilotController 
     planner = new TrueForgePlanner(new TrueForgeClient(config, options.trueforgeSdk), tools, {
       activeRun,
       ...(config.model ? { agent: { model: config.model, connectorName: config.connectorName } } : {}),
+    });
+  } else if (!planner && options.openrouter) {
+    const orOpts = typeof options.openrouter === 'object' ? options.openrouter : {};
+    planner = new OpenRouterPlanner(tools, {
+      workspaceRoot,
+      ...orOpts,
     });
   }
 
@@ -93,5 +103,7 @@ export { TrueForgePlanner, buildPrompt, buildAgentSpec, AGENT_INSTRUCTIONS, MAX_
 export type { AgentPlanner, PlanInput, PlanResult, TrueForgePlannerOptions } from './planner';
 export { TrueForgeClient } from './trueforgeClient';
 export type { TrueForgeSdk, TurnEvent } from './trueforgeClient';
+export { OpenRouterPlanner } from './openrouterPlanner';
+export type { OpenRouterPlannerOptions } from './openrouterPlanner';
 export { generateConnectorToken } from '../mcp/httpServer';
 export * from './errors';

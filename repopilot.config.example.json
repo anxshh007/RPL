@@ -1,0 +1,12 @@
+{
+  "repopilot.trueforge.baseUrl": "http://127.0.0.1:8000",
+  "repopilot.trueforge.model": "openai/gpt-4o",
+  "repopilot.trueforge.connectorName": "repopilot",
+  "repopilot.mcp.port": 8791,
+  "repopilot.openrouter.apiKey": "YOUR_OPENROUTER_API_KEY_HERE",
+  "repopilot.openrouter.model": "google/gemma-4-26b-a4b-it:free",
+  "repopilot.openrouter.baseUrl": "https://openrouter.ai/api/v1",
+  "repopilot.context.tokenBudget": 12000,
+  "repopilot.tests.requireApproval": true,
+  "repopilot.tests.timeoutMs": 30000
+}

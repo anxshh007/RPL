@@ -6,6 +6,8 @@
 export const TOOL_NAMES = {
   // Member 2 — read-only
   searchWorkspace: 'search_workspace',
+  listDirectory: 'list_directory',
+  findFiles: 'find_files',
   readFile: 'read_file',
   findSymbol: 'find_symbol',
   getRepositoryContext: 'get_repository_context',
@@ -27,6 +29,8 @@ export type ToolName = (typeof TOOL_NAMES)[keyof typeof TOOL_NAMES];
 /** Tools the model may call without a human approval gate. */
 export const READ_ONLY_TOOLS: ReadonlySet<ToolName> = new Set<ToolName>([
   TOOL_NAMES.searchWorkspace,
+  TOOL_NAMES.listDirectory,
+  TOOL_NAMES.findFiles,
   TOOL_NAMES.readFile,
   TOOL_NAMES.findSymbol,
   TOOL_NAMES.getRepositoryContext,
