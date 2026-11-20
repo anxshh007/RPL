@@ -12,6 +12,7 @@ import { validateWorkspacePath, SecurityPathError } from '../../../src/verificat
 import { redactSecrets, sanitizeEnvironment } from '../../../src/verification/utils/redactor';
 import { validateCommandArguments } from '../../../src/verification/safe-runner';
 import { parsePytestOutput, categorizeException } from '../../../src/verification/parser';
+import { isPytestVersionOutput, PROBE_TIMEOUT_MS } from '../../../src/verification/discovery';
 import { selectRelevantTests } from '../../../src/verification/selection';
 import { discoverWorkspaceTestConfig, detectPytestRunner, clearRunnerCache } from '../../../src/verification/discovery';
 import type { TestRunRequest } from '../../../src/shared/contracts';
@@ -581,4 +582,21 @@ test('MCP tool handlers: createVerificationToolHandlers shares service and retur
   if (nonExistent.ok) {
     assert.equal(nonExistent.value, null);
   }
+});
+
+test('runner detection: only a clean exit that prints the pytest version counts', () => {
+  assert.equal(isPytestVersionOutput(0, 'pytest 9.2.0\n'), true);
+  assert.equal(isPytestVersionOutput(0, 'pytest 8.3.4'), true);
+  // Windows py launcher pointing at a missing Python: mentions "pytest" but failed
+  assert.equal(
+    isPytestVersionOutput(101, "Unable to create process using 'C:\\Python314\\python.exe -m pytest --version': The system cannot find the file specified."),
+    false,
+  );
+  assert.equal(isPytestVersionOutput(1, 'No module named pytest'), false);
+  assert.equal(isPytestVersionOutput(0, ''), false);
+  assert.equal(isPytestVersionOutput(null, 'pytest 9.2.0'), false);
+});
+
+test('runner detection: the probe allows a busy machine several seconds', () => {
+  assert.ok(PROBE_TIMEOUT_MS >= 10_000);
 });

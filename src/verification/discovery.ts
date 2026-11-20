@@ -29,6 +29,18 @@ export function clearRunnerCache(): void {
   runnerCache.clear();
 }
 
+/**
+ * A probed interpreter counts only if it exited cleanly AND printed pytest's version line.
+ * Matching the word "pytest" alone is not enough: on Windows the py launcher fails with
+ * "Unable to create process using '...python.exe -m pytest ...'", which also contains it.
+ */
+export function isPytestVersionOutput(exitCode: number | null, output: string): boolean {
+  return exitCode === 0 && /^pytest \d/m.test(output);
+}
+
+/** How long one "python -m pytest --version" probe may take. A busy machine can need several seconds. */
+export const PROBE_TIMEOUT_MS = 15_000;
+
 async function probeCandidate(
   candidate: string,
   signal?: AbortSignal
@@ -58,7 +70,7 @@ async function probeCandidate(
           // Ignored
         }
         finish(false);
-      }, 2500);
+      }, PROBE_TIMEOUT_MS);
 
       let output = '';
       child.stdout?.on('data', (d: Buffer) => { output += d.toString('utf-8'); });
@@ -66,7 +78,7 @@ async function probeCandidate(
 
       child.on('error', () => finish(false));
       child.on('close', (code) => {
-        finish(code === 0 || output.includes('pytest'));
+        finish(isPytestVersionOutput(code, output));
       });
     } catch {
       resolve(false);
