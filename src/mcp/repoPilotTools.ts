@@ -2,6 +2,8 @@
 //   Member 2: src/repository/tools.ts   Member 3: src/impact/tools.ts
 //   Member 4: src/verification/tools.ts Member 1: propose_edit, apply_approved_hunks, undo_changes
 import type { ZodTypeAny } from 'zod';
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
 import type {
   EditService,
   ImpactAnalyser,
@@ -15,11 +17,14 @@ import { PathSecurityValidator } from './safety';
 import { TOOL_NAMES } from './tool-names';
 import { refuse, ToolRegistry } from './toolRegistry';
 import type { ToolCallContext, ToolOutcome } from './toolRegistry';
+import { listWorkspaceFiles } from '../repository/workspace-scanner';
 import {
   ApplyApprovedHunksSchema,
   DiscoverTestsSchema,
   GetTestResultsSchema,
   ImpactToolModelSchema,
+  ListDirectorySchema,
+  FindFilesSchema,
   ProposeEditSchema,
   RepositoryContextModelSchema,
   RunTestsSchema,
@@ -38,6 +43,32 @@ export interface RepoPilotToolDependencies {
   edits: EditService;
 }
 
+function globToRegExp(pattern: string): RegExp {
+  const normalized = pattern.replace(/\\/g, '/').replace(/^\/+/, '');
+  let source = '';
+  for (let index = 0; index < normalized.length; index += 1) {
+    const character = normalized[index];
+    if (character === '*') {
+      if (normalized[index + 1] === '*') {
+        if (normalized[index + 2] === '/') {
+          source += '(?:.*/)?';
+          index += 2;
+        } else {
+          source += '.*';
+          index += 1;
+        }
+      } else {
+        source += '[^/]*';
+      }
+    } else if (character === '?') {
+      source += '[^/]';
+    } else {
+      source += character.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+  }
+  return new RegExp(`^${source}$`, 'i');
+}
+
 export function createRepoPilotTools(deps: RepoPilotToolDependencies): ToolRegistry {
   const registry = new ToolRegistry();
   const security = new PathSecurityValidator(deps.workspaceRoot);
@@ -45,11 +76,71 @@ export function createRepoPilotTools(deps: RepoPilotToolDependencies): ToolRegis
   const impactTools = createImpactToolHandlers(deps.impact);
   const testTools = createVerificationToolHandlers(deps.verification);
 
+  registry.register({
+    name: TOOL_NAMES.listDirectory,
+    description:
+      'List files and folders in a workspace directory. Paths are workspace-relative; omit path to list the workspace root.',
+    inputSchema: jsonSchema(ListDirectorySchema),
+    handler: async (input) => {
+      const parsed = parse(ListDirectorySchema, input);
+      if (!parsed.ok) return parsed.outcome;
+      const requestedPath = typeof parsed.value.path === 'string' ? parsed.value.path : '.';
+      const directory = security.resolveSafePath(requestedPath);
+      const entries = await fs.readdir(directory, { withFileTypes: true });
+      const relativeDirectory = requestedPath === '.'
+        ? ''
+        : requestedPath.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+      return {
+        ok: true,
+        value: {
+          path: relativeDirectory || '.',
+          entries: entries
+            .filter((entry) => !entry.isSymbolicLink())
+            .sort((a, b) => {
+              if (a.isDirectory() !== b.isDirectory()) return a.isDirectory() ? -1 : 1;
+              return a.name.localeCompare(b.name);
+            })
+            .map((entry) => ({
+              name: entry.name,
+              kind: entry.isDirectory() ? 'directory' : 'file',
+              path: relativeDirectory ? path.posix.join(relativeDirectory, entry.name) : entry.name,
+            })),
+        },
+      };
+    },
+  });
+
+  registry.register({
+    name: TOOL_NAMES.findFiles,
+    description:
+      'Find workspace files by glob pattern such as **/*.html or src/**/*.ts. Results are workspace-relative.',
+    inputSchema: jsonSchema(FindFilesSchema),
+    handler: async (input) => {
+      const parsed = parse(FindFilesSchema, input);
+      if (!parsed.ok) return parsed.outcome;
+      const basePath = parsed.value.path ?? '.';
+      security.resolveSafePath(basePath);
+      const scan = await listWorkspaceFiles(deps.workspaceRoot);
+      const base = basePath === '.' ? '' : basePath.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+      const matcher = globToRegExp(parsed.value.pattern);
+      const limit = parsed.value.limit ?? 100;
+      const matches = scan.files
+        .filter((file) => !base || file === base || file.startsWith(`${base}/`))
+        .filter((file) => matcher.test(base ? file.slice(base.length + 1) : file))
+        .slice(0, limit);
+      return {
+        ok: true,
+        value: { pattern: parsed.value.pattern, path: base || '.', files: matches, incomplete: scan.incomplete },
+      };
+    },
+  });
+
   // ── Member 2: repository (handlers validate their own input) ──
   for (const def of REPOSITORY_TOOL_DEFINITIONS) {
     if (def.name === TOOL_NAMES.getRepositoryContext) {
       continue;
     }
+
     const handler = repoTools[def.name as keyof typeof repoTools];
     registry.register({
       name: def.name,

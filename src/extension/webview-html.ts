@@ -21,7 +21,7 @@ export function renderWebviewHtml(
 <head>
   <meta charset="UTF-8">
   <meta http-equiv="Content-Security-Policy"
-    content="default-src 'none'; style-src ${cspSource}; script-src 'nonce-${n}' ${cspSource}; font-src ${cspSource} data:; img-src ${cspSource} data:;">
+    content="default-src 'none'; style-src ${cspSource} 'unsafe-inline'; script-src 'nonce-${n}' ${cspSource}; font-src ${cspSource} data:; img-src ${cspSource} data:;">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>RepoPilot AI</title>
   ${cssUri ? `<link rel="stylesheet" href="${cssUri}">` : ''}

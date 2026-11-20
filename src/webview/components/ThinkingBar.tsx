@@ -63,7 +63,7 @@ export const ThinkingBar: React.FC<ThinkingBarProps> = ({
           <div className="p-1 rounded bg-blue-50 border border-blue-200 text-blue-600">
             <IconSparkles size={14} className={isStreaming ? 'animate-pulse' : ''} />
           </div>
-          <span className="text-xs font-semibold font-mono tracking-tight text-gray-900">
+          <span className={`text-xs font-semibold font-mono tracking-tight ${isStreaming ? 'text-shimmer' : ''}`}>
             {headline}
           </span>
         </div>

@@ -52,6 +52,10 @@ export function useExtensionBridge() {
     getVsCode()?.postMessage({ type: 'ui.openDiff', requestId, path });
   }, []);
 
+  const changeModel = useCallback((model: string) => {
+    getVsCode()?.postMessage({ type: 'ui.setModel', model });
+  }, []);
+
   return {
     state,
     submitInstruction,
@@ -59,5 +63,6 @@ export function useExtensionBridge() {
     applyHunks,
     undoHunks,
     openDiff,
+    changeModel,
   };
 }

@@ -18,69 +18,111 @@ const SECRET_CONNECTOR_TOKEN = 'repopilot.mcp.connectorToken';
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   const output = vscode.window.createOutputChannel('RepoPilot AI');
   registerTrueForgeCommands(context);
-  const workspace = vscode.workspace.workspaceFolders?.[0];
-  if (!workspace) {
-    // RepoPilot needs a folder: there is no process.cwd() fallback.
-    context.subscriptions.push(
-      output,
-      vscode.commands.registerCommand('repopilot.open', () => vscode.window.showWarningMessage('RepoPilot: open a folder first.')),
-      vscode.commands.registerCommand('repopilot.inlineEdit', () => vscode.window.showWarningMessage('RepoPilot: open a folder first.')),
-    );
-    return;
-  }
-  const config = vscode.workspace.getConfiguration('repopilot');
-  const baseUrl = config.get<string>('trueforge.baseUrl', '').trim();
-  const apiKey = await context.secrets.get(SECRET_API_KEY);
-  const controller = createRepoPilot({
-    workspaceRoot: workspace.uri.fsPath,
-    tokenBudget: config.get<number>('context.tokenBudget'),
-    requireTestApproval: config.get<boolean>('tests.requireApproval', true),
-    testTimeoutMs: config.get<number>('tests.timeoutMs'),
-    trueforge: {
-      baseUrl,
-      model: config.get<string>('trueforge.model', ''),
-      connectorName: config.get<string>('trueforge.connectorName', 'repopilot'),
-      ...(apiKey ? { apiKey } : {}),
-    },
-    // RepoPilot's tools for TrueForge, on 127.0.0.1 only, only when TrueForge is configured.
-    ...(baseUrl
-      ? {
-          mcpConnector: {
-            port: config.get<number>('mcp.port', 8791),
-            token: await connectorToken(context),
-            onReady: (url: string) => output.appendLine(`RepoPilot MCP connector listening at ${url}`),
-            onError: (err: Error) => {
-              output.appendLine(`RepoPilot MCP connector could not start: ${err.message}`);
-              void vscode.window.showWarningMessage(
-                `RepoPilot: the TrueForge connector could not start (${err.message}). Change "repopilot.mcp.port" and reload.`,
-              );
+
+  let controller: RepoPilotController | undefined;
+
+  async function initController(): Promise<RepoPilotController | undefined> {
+    const workspace = vscode.workspace.workspaceFolders?.[0];
+    if (!workspace) return undefined;
+    if (controller) return controller;
+
+    const config = vscode.workspace.getConfiguration('repopilot');
+    const baseUrl = config.get<string>('trueforge.baseUrl', '').trim();
+    const apiKey = await context.secrets.get(SECRET_API_KEY);
+    const newController = createRepoPilot({
+      workspaceRoot: workspace.uri.fsPath,
+      tokenBudget: config.get<number>('context.tokenBudget'),
+      requireTestApproval: config.get<boolean>('tests.requireApproval', true),
+      testTimeoutMs: config.get<number>('tests.timeoutMs'),
+      openrouter: {
+        apiKey: config.get<string>('openrouter.apiKey') || process.env.OPENROUTER_API_KEY || '',
+        model: config.get<string>('openrouter.model') || 'google/gemma-4-26b-a4b-it:free',
+        baseUrl: config.get<string>('openrouter.baseUrl') || 'https://openrouter.ai/api/v1',
+        fallbackModels: [
+          'nvidia/nemotron-3.5-lightning:free',
+          'nvidia/nemotron-3.5-super-vl:free',
+          'nvidia/nemotron-3-ultra-550b-a55b:free',
+          'openrouter/auto',
+        ],
+      },
+      trueforge: {
+        baseUrl,
+        model: config.get<string>('trueforge.model', ''),
+        connectorName: config.get<string>('trueforge.connectorName', 'repopilot'),
+        ...(apiKey ? { apiKey } : {}),
+      },
+      ...(baseUrl
+        ? {
+            mcpConnector: {
+              port: config.get<number>('mcp.port', 8791),
+              token: await connectorToken(context),
+              onReady: (url: string) => output.appendLine(`RepoPilot MCP connector listening at ${url}`),
+              onError: (err: Error) => {
+                output.appendLine(`RepoPilot MCP connector could not start: ${err.message}`);
+                void vscode.window.showWarningMessage(
+                  `RepoPilot: the TrueForge connector could not start (${err.message}). Change "repopilot.mcp.port" and reload.`,
+                );
+              },
             },
-          },
-        }
-      : {}),
-  });
+          }
+        : {}),
+    });
+
+    controller = newController;
+    output.appendLine('RepoPilot AI initialized with OpenRouter planner (google/gemma-4-26b-a4b-it:free)');
+    context.subscriptions.push(
+      { dispose: () => void newController.dispose() },
+      newController.onEvent((event) => {
+        proposedPlans.record(event);
+        output.appendLine(`[${event.requestId}] ${event.type}${'message' in event ? ': ' + event.message : ''}`);
+        post({ type: 'host.event', event });
+      }),
+    );
+    return controller;
+  }
+
+  // Initialize controller asynchronously without blocking extension activation
+  void initController().catch((err) => output.appendLine('Controller deferred: ' + String(err)));
+
   context.subscriptions.push(
-    { dispose: () => void controller.dispose() },
+    output,
+    registerProposedContentProvider(proposedPlans),
+    vscode.workspace.onDidChangeWorkspaceFolders(async () => {
+      await initController();
+      const ws = vscode.workspace.workspaceFolders?.[0];
+      post({ type: 'host.workspace', available: !!ws, name: ws?.name });
+    }),
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration('repopilot.trueforge') || e.affectsConfiguration('repopilot.mcp')) {
         void promptReload('RepoPilot settings changed.');
       }
     }),
-  );
-
-  // Forward every agent event to the log and the panel.
-  context.subscriptions.push(
-    output,
-    registerProposedContentProvider(proposedPlans),
-    controller.onEvent((event) => {
-      proposedPlans.record(event); // remembered for "Open diff"
-      output.appendLine(`[${event.requestId}] ${event.type}${'message' in event ? ': ' + event.message : ''}`);
-      post({ type: 'host.event', event });
+    vscode.commands.registerCommand('repopilot.open', async () => {
+      await initController();
+      openPanel(context, () => controller);
     }),
-
-    vscode.commands.registerCommand('repopilot.open', () => openPanel(context, controller)),
-
+    vscode.commands.registerCommand('repopilot.selectModel', async () => {
+      const items = [
+        { label: 'Gemma 4 26B', description: 'google/gemma-4-26b-a4b-it:free', detail: 'Google Gemma 4' },
+        { label: 'Nemotron 3.5 Lightning', description: 'nvidia/nemotron-3.5-lightning:free', detail: 'NVIDIA Fast & Robust' },
+        { label: 'Nemotron 3.5 Super VL', description: 'nvidia/nemotron-3.5-super-vl:free', detail: 'NVIDIA Multimodal' },
+        { label: 'Nemotron 3 Ultra 550B', description: 'nvidia/nemotron-3-ultra-550b-a55b:free', detail: 'NVIDIA 550B Reasoning' },
+        { label: 'OpenRouter Auto', description: 'openrouter/auto', detail: 'Dynamic best available model' },
+      ];
+      const selected = await vscode.window.showQuickPick(items, { placeHolder: 'Select active model for RepoPilot' });
+      if (selected) {
+        const config = vscode.workspace.getConfiguration('repopilot');
+        await config.update('openrouter.model', selected.description, vscode.ConfigurationTarget.Global);
+        vscode.window.showInformationMessage(`RepoPilot: active model set to ${selected.label}`);
+        post({ type: 'host.model', model: selected.description });
+      }
+    }),
     vscode.commands.registerCommand('repopilot.inlineEdit', async () => {
+      const activeCtrl = await initController();
+      if (!activeCtrl) {
+        vscode.window.showWarningMessage('RepoPilot: open a folder first.');
+        return;
+      }
       const editor = vscode.window.activeTextEditor;
       if (!editor || editor.selection.isEmpty) {
         vscode.window.showWarningMessage('RepoPilot: select some code first.');
@@ -90,9 +132,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (!instruction) {
         return;
       }
-      openPanel(context, controller);
+      openPanel(context, () => controller);
       const sel = editor.selection;
-      void controller.submit(
+      void activeCtrl.submit(
         buildRequest(instruction, 'inline', {
           activeFile: vscode.workspace.asRelativePath(editor.document.uri, false),
           selectedText: editor.document.getText(sel),
@@ -166,7 +208,7 @@ function registerTrueForgeCommands(context: vscode.ExtensionContext): void {
   );
 }
 
-function openPanel(context: vscode.ExtensionContext, controller: RepoPilotController): void {
+function openPanel(context: vscode.ExtensionContext, getController: () => RepoPilotController | undefined): void {
   if (panel) {
     panel.reveal();
     return;
@@ -174,8 +216,7 @@ function openPanel(context: vscode.ExtensionContext, controller: RepoPilotContro
   panel = vscode.window.createWebviewPanel('repopilot', 'RepoPilot AI', vscode.ViewColumn.Beside, {
     enableScripts: true,
     localResourceRoots: [
-      vscode.Uri.joinPath(context.extensionUri, 'out'),
-      vscode.Uri.joinPath(context.extensionUri, 'media'),
+      context.extensionUri,
     ],
   });
   const scriptUri = panel.webview.asWebviewUri(
@@ -198,21 +239,25 @@ function openPanel(context: vscode.ExtensionContext, controller: RepoPilotContro
           post({ type: 'host.workspace', available: !!ws, name: ws?.name });
           break;
         }
-        case 'ui.submit':
-          if (!vscode.workspace.workspaceFolders?.length) {
+        case 'ui.submit': {
+          const ctrl = getController();
+          if (!vscode.workspace.workspaceFolders?.length || !ctrl) {
             post({ type: 'host.error', message: 'Open a folder first.' });
             return;
           }
           if (typeof raw.instruction === 'string' && raw.instruction.trim()) {
-            void controller.submit(buildRequest(raw.instruction.trim(), 'agent'));
+            void ctrl.submit(buildRequest(raw.instruction.trim(), 'agent'));
           }
           break;
+        }
         case 'ui.cancel':
-          controller.cancel(raw.requestId);
+          getController()?.cancel(raw.requestId);
           break;
         case 'ui.applyDecisions':
           {
-            const result = await controller.applyDecisions(raw.requestId, raw.decisions);
+            const ctrl = getController();
+            if (!ctrl) return;
+            const result = await ctrl.applyDecisions(raw.requestId, raw.decisions);
             // D-12: ask before every TestSheriff run when repopilot.tests.requireApproval is on.
             if (
               result.status === 'applied' &&
@@ -224,17 +269,24 @@ function openPanel(context: vscode.ExtensionContext, controller: RepoPilotContro
                 'Not now',
               );
               if (choice === 'Run tests') {
-                await controller.runVerification(raw.requestId);
+                await ctrl.runVerification(raw.requestId);
               }
             }
           }
           break;
         case 'ui.undo':
-          await controller.undo(raw.requestId);
+          await getController()?.undo(raw.requestId);
           break;
         case 'ui.openDiff':
           await openProposedDiff(proposedPlans, raw.requestId, raw.path);
           break;
+        case 'ui.setModel': {
+          const config = vscode.workspace.getConfiguration('repopilot');
+          await config.update('openrouter.model', raw.model, vscode.ConfigurationTarget.Global);
+          vscode.window.showInformationMessage(`RepoPilot: model switched to ${raw.model}`);
+          post({ type: 'host.model', model: raw.model });
+          break;
+        }
       }
     },
     null,

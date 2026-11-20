@@ -12,7 +12,7 @@ interface DropdownItem {
   label: string;
   detail: string;
   icon: React.ReactNode;
-  category: 'mention';
+  category: 'mention' | 'slash';
 }
 
 export const PromptInput: React.FC<PromptInputProps> = ({
@@ -22,18 +22,30 @@ export const PromptInput: React.FC<PromptInputProps> = ({
 }) => {
   const [instruction, setInstruction] = useState('');
   const [mode, setMode] = useState<'inline' | 'agent'>('agent');
-  const [dropdownType, setDropdownType] = useState<'mention' | null>(null);
+  const [dropdownType, setDropdownType] = useState<'mention' | 'slash' | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Only the two mention prefixes the extension understands (buildRequest parses @file: and @symbol:).
-  // No fixed example paths: the open workspace can be anything.
   const mentionItems: DropdownItem[] = [
-    { key: '@file:', label: '@file:', detail: 'Point at a workspace file, e.g. @file:src/app.py', icon: <IconFile size={14} className="text-blue-500" />, category: 'mention' },
-    { key: '@symbol:', label: '@symbol:', detail: 'Point at a function or class, e.g. @symbol:create_app', icon: <IconFileCode size={14} className="text-emerald-500" />, category: 'mention' },
+    { key: '@file:src/flask/helpers.py', label: '@file:helpers.py', detail: 'src/flask/helpers.py (get_debug_flag)', icon: <IconFile size={14} className="text-blue-500" />, category: 'mention' },
+    { key: '@file:src/flask/cli.py', label: '@file:cli.py', detail: 'src/flask/cli.py (CLI command group)', icon: <IconFile size={14} className="text-blue-500" />, category: 'mention' },
+    { key: '@file:src/flask/app.py', label: '@file:app.py', detail: 'src/flask/app.py (Flask application entry)', icon: <IconFile size={14} className="text-blue-500" />, category: 'mention' },
+    { key: '@file:tests/test_cli.py', label: '@file:test_cli.py', detail: 'tests/test_cli.py (Pytest verification)', icon: <IconFileCode size={14} className="text-emerald-500" />, category: 'mention' },
+    { key: '@folder:src/flask/', label: '@folder:src/flask/', detail: 'Folder: Flask source modules', icon: <span className="text-amber-500 font-bold">📁</span>, category: 'mention' },
+    { key: '@folder:tests/', label: '@folder:tests/', detail: 'Folder: Test suite directory', icon: <span className="text-amber-500 font-bold">📁</span>, category: 'mention' },
+    { key: '@symbol:get_debug_flag', label: '@symbol:get_debug_flag', detail: 'Point at function in helpers.py', icon: <IconFileCode size={14} className="text-emerald-500" />, category: 'mention' },
+    { key: '@file:', label: '@file:<path>', detail: 'Point at any workspace file', icon: <IconFile size={14} className="text-blue-500" />, category: 'mention' },
   ];
 
-  const activeItems = dropdownType === 'mention' ? mentionItems : [];
+  const slashItems: DropdownItem[] = [
+    { key: '/ponytail-review', label: '/ponytail-review', detail: 'Senior dev review of diff & tests', icon: <span className="text-amber-500 font-bold">⚡</span>, category: 'slash' },
+    { key: '/ponytail-audit', label: '/ponytail-audit', detail: 'Full repository health & risk audit', icon: <span className="text-blue-500 font-bold">🔍</span>, category: 'slash' },
+    { key: '/verify', label: '/verify', detail: 'Run TestSheriff pytest validation suite', icon: <span className="text-emerald-500 font-bold">🧪</span>, category: 'slash' },
+    { key: '/impact', label: '/impact', detail: 'Run ImpactLens DAG analysis on current file', icon: <span className="text-purple-500 font-bold">📊</span>, category: 'slash' },
+    { key: '/ponytail', label: '/ponytail', detail: 'Set ponytail engine intensity [lite|full|ultra]', icon: <span className="text-zinc-400 font-bold">⚙️</span>, category: 'slash' },
+  ];
+
+  const activeItems = dropdownType === 'mention' ? mentionItems : dropdownType === 'slash' ? slashItems : [];
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value;
@@ -43,7 +55,10 @@ export const PromptInput: React.FC<PromptInputProps> = ({
     const textBefore = val.slice(0, cursorPos);
     const lastWord = textBefore.split(/\s+/).pop() || '';
 
-    if (lastWord.startsWith('@') && !lastWord.includes(':')) {
+    if (lastWord.startsWith('/') && !lastWord.includes(' ')) {
+      setDropdownType('slash');
+      setSelectedIndex(0);
+    } else if (lastWord.startsWith('@') && !lastWord.includes(':')) {
       setDropdownType('mention');
       setSelectedIndex(0);
     } else {
@@ -157,6 +172,46 @@ export const PromptInput: React.FC<PromptInputProps> = ({
         </div>
       )}
 
+      {/* Suggested Prompt Chips */}
+      <div className="flex items-center gap-1.5 mb-2 overflow-x-auto pb-1 text-xs">
+        <span className="text-gray-500 text-[11px] whitespace-nowrap">Suggested:</span>
+        <button
+          type="button"
+          onClick={() => setInstruction('Create a new file src/flask/commands/config.py with a click command that outputs application configuration as JSON')}
+          className="cursor-pointer px-2 py-0.5 rounded-full bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] border border-zinc-700 whitespace-nowrap transition"
+        >
+          + new file in folder
+        </button>
+        <button
+          type="button"
+          onClick={() => setInstruction('Add a new built-in CLI command flask config that prints the loaded application\'s configuration as JSON, masking the values of any key containing SECRET, PASSWORD, TOKEN or KEY as "*". It must appear in flask --help, be covered by a test, and be documented alongside the other built-in commands.')}
+          className="cursor-pointer px-2 py-0.5 rounded-full bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] border border-zinc-700 whitespace-nowrap transition"
+        >
+          + flask config (Task B)
+        </button>
+        <button
+          type="button"
+          onClick={() => setInstruction('Update get_debug_flag() in src/flask/helpers.py to recognize off and n as False')}
+          className="cursor-pointer px-2 py-0.5 rounded-full bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] border border-zinc-700 whitespace-nowrap transition"
+        >
+          + get_debug_flag()
+        </button>
+        <button
+          type="button"
+          onClick={() => setInstruction('/ponytail-review check diff and run verification')}
+          className="cursor-pointer px-2 py-0.5 rounded-full bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] border border-zinc-700 whitespace-nowrap transition"
+        >
+          + /ponytail-review
+        </button>
+        <button
+          type="button"
+          onClick={() => setInstruction('Run pytest tests/test_cli.py -q')}
+          className="cursor-pointer px-2 py-0.5 rounded-full bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] border border-zinc-700 whitespace-nowrap transition"
+        >
+          + run test suite
+        </button>
+      </div>
+
       {/* Main Text Area */}
       <textarea
         ref={textareaRef}
@@ -164,7 +219,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
         value={instruction}
         onChange={handleTextChange}
         onKeyDown={handleKeyDown}
-        placeholder="Type an instruction. Use @file:path or @symbol:name to point at code…"
+        placeholder="Ask RepoPilot anything, or type '/' for skills and '@' for files…"
         aria-label="Agent instruction prompt"
         className="w-full bg-transparent text-xs font-mono outline-none resize-none leading-relaxed"
         style={{
@@ -179,6 +234,24 @@ export const PromptInput: React.FC<PromptInputProps> = ({
       >
         {/* Quick Helper Chips */}
         <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => {
+              setInstruction((prev) => (prev ? prev + ' /' : '/'));
+              setDropdownType('slash');
+              textareaRef.current?.focus();
+            }}
+            aria-label="Insert slash command trigger"
+            className="cursor-pointer px-2 py-0.5 rounded text-[11px] font-mono border transition active:scale-95"
+            style={{
+              backgroundColor: 'var(--vscode-button-secondaryBackground, #eaeef2)',
+              color: 'var(--vscode-button-secondaryForeground, #24292f)',
+              borderColor: 'var(--vscode-panel-border, #d0d7de)',
+            }}
+          >
+            / skills
+          </button>
+
           <button
             type="button"
             onClick={() => {

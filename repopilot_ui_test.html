@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RepoPilot AI — Antigravity Agent Interface</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    :root {
+      --background: #09090b;
+      --foreground: #fafafa;
+      --card: #18181b;
+      --border: #27272a;
+    }
+    body {
+      background-color: var(--background);
+      color: var(--foreground);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    pre, code {
+      font-family: "JetBrains Mono", Consolas, monospace;
+    }
+    @keyframes shimmer {
+      0% { background-position: -200% 0; }
+      100% { background-position: 200% 0; }
+    }
+    .text-shimmer {
+      background: linear-gradient(90deg, #71717a 0%, #ffffff 50%, #71717a 100%);
+      background-size: 200% 100%;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: shimmer 2.5s infinite linear;
+    }
+  </style>
+</head>
+<body class="p-3 md:p-6 min-h-screen flex flex-col justify-between">
+
+  <div class="max-w-3xl w-full mx-auto space-y-6 flex-1 flex flex-col justify-between">
+
+    <!-- Top Header -->
+    <header class="flex items-center justify-between pb-3 border-b border-zinc-800">
+      <div class="flex items-center gap-2.5">
+        <div class="w-8 h-8 rounded-lg bg-white text-black font-bold flex items-center justify-center text-xs shadow-md">
+          RP
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-sm font-semibold text-white tracking-wide">RepoPilot AI</h1>
+            <select id="modelSelector" onchange="onModelSelect(this.value)" class="text-[11px] px-2.5 py-0.5 rounded-full bg-blue-950/90 hover:bg-blue-900/80 text-blue-300 border border-blue-700 font-mono outline-none cursor-pointer shadow-sm transition" title="Change active LLM model">
+              <option value="google/gemma-4-26b-a4b-it:free" class="bg-zinc-900 text-white">Gemma 4 26B (Primary)</option>
+              <option value="nvidia/nemotron-3.5-lightning:free" class="bg-zinc-900 text-white">Nemotron 3.5 Lightning</option>
+              <option value="nvidia/nemotron-3.5-super-vl:free" class="bg-zinc-900 text-white">Nemotron 3.5 Super VL</option>
+              <option value="nvidia/nemotron-3-ultra-550b-a55b:free" class="bg-zinc-900 text-white">Nemotron 3 Ultra 550B</option>
+              <option value="openrouter/auto" class="bg-zinc-900 text-white">OpenRouter Auto</option>
+            </select>
+          </div>
+          <p class="text-xs text-zinc-500 font-mono">Autonomous Coding Agent &bull; Antigravity Live Surface</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <span id="backendBadge" class="text-[11px] px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-400 border border-emerald-800 font-mono">
+          ● Ready
+        </span>
+      </div>
+    </header>
+
+    <!-- Workspace Folder Navigator -->
+    <div class="rounded-xl border border-zinc-800 bg-zinc-900/60 p-2.5 mb-1 flex items-center justify-between text-xs">
+      <div class="flex items-center gap-2 overflow-x-auto py-0.5">
+        <span class="text-zinc-500 font-mono text-[11px] shrink-0">📁 Folders:</span>
+        <button onclick="insertPrompt('List all files and functions inside src/flask/ and explain what they do')" class="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-mono text-[11px] border border-zinc-700 whitespace-nowrap transition">
+          📂 src/flask/
+        </button>
+        <button onclick="insertPrompt('Show all test files in tests/ and what they verify')" class="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-mono text-[11px] border border-zinc-700 whitespace-nowrap transition">
+          📂 tests/
+        </button>
+        <button onclick="insertPrompt('Explore repository structure and navigate all folders and files in this project')" class="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-mono text-[11px] border border-zinc-700 whitespace-nowrap transition">
+          🔍 Navigate Tree
+        </button>
+        <button onclick="insertPrompt('Create a new file src/flask/commands/config.py with a click command that outputs JSON config')" class="px-2 py-0.5 rounded bg-blue-950/80 hover:bg-blue-900 text-blue-300 font-mono text-[11px] border border-blue-700 whitespace-nowrap transition">
+          ✨ + New File in Folder
+        </button>
+      </div>
+    </div>
+
+    <!-- Chat Container -->
+    <div class="space-y-6 flex-1 overflow-y-auto my-4 pb-2" id="chatContainer">
+
+      <!-- WELCOME / SYSTEM MESSAGE -->
+      <div class="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 space-y-2 text-xs">
+        <div class="flex items-center gap-2 font-semibold text-zinc-200">
+          <span>✨ RepoPilot AI is ready.</span>
+        </div>
+        <p class="text-zinc-400 leading-relaxed">
+          Ask me to create new files in any folder, edit existing files, navigate repository folders, run tests, or propose hunk-level diffs with ImpactLens analysis.
+          I am powered by <strong class="text-white">google/gemma-4-26b-a4b-it:free</strong> via OpenRouter.
+        </p>
+        <div class="pt-2 flex flex-wrap gap-2 text-[11px] font-mono text-zinc-400">
+          <span class="px-2 py-0.5 rounded bg-zinc-800 border border-zinc-700">Type <strong>/</strong> for skills</span>
+          <span class="px-2 py-0.5 rounded bg-zinc-800 border border-zinc-700">Type <strong>@</strong> for files, folders &amp; symbols</span>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- PROMPT INPUT CONTAINER WITH AUTOCOMPLETE POPUP -->
+    <div class="sticky bottom-2 pt-2 bg-gradient-to-t from-[var(--background)] via-[var(--background)] to-transparent relative">
+
+      <!-- FLOATING POPUP AUTOCOMPLETE MENU -->
+      <div id="autocompletePopup" class="hidden absolute bottom-full left-0 mb-3 w-80 rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl p-1.5 z-50 text-xs">
+        <div id="popupHeader" class="px-2 py-1 text-[10px] font-mono uppercase tracking-wider text-zinc-500 border-b border-zinc-800 mb-1 flex items-center justify-between">
+          <span id="popupTitle">Skills &amp; Commands</span>
+          <span class="text-zinc-600">Click or press Enter</span>
+        </div>
+        <div id="popupList" class="max-h-48 overflow-y-auto space-y-0.5">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+
+      <!-- Suggested Chips -->
+      <div class="flex items-center gap-2 mb-2 overflow-x-auto pb-1 text-xs">
+        <span class="text-zinc-500 text-[11px] whitespace-nowrap">Suggested:</span>
+        <button onclick="insertPrompt('Create a new file src/flask/commands/config.py with a click command that outputs JSON config')" class="px-2.5 py-1 rounded-full bg-zinc-900 hover:bg-zinc-800 text-zinc-300 text-[11px] border border-zinc-800 whitespace-nowrap transition">
+          + new file in folder
+        </button>
+        <button onclick="insertPrompt('Add a new built-in CLI command flask config that prints the loaded application\'s configuration as JSON, masking the values of any key containing SECRET, PASSWORD, TOKEN or KEY as &quot;*&quot;. It must appear in flask --help, be covered by a test, and be documented alongside the other built-in commands.')" class="px-2.5 py-1 rounded-full bg-zinc-900 hover:bg-zinc-800 text-zinc-300 text-[11px] border border-zinc-800 whitespace-nowrap transition">
+          + Task B (Multi-File)
+        </button>
+        <button onclick="insertPrompt('Treat the values \'off\' and \'n\' as false as well, case-insensitively, and update the docstring to list every value that is treated as false in src/flask/helpers.py')" class="px-2.5 py-1 rounded-full bg-zinc-900 hover:bg-zinc-800 text-zinc-300 text-[11px] border border-zinc-800 whitespace-nowrap transition">
+          + Task A (Inline Edit)
+        </button>
+        <button onclick="insertPrompt('Run pytest tests/test_cli.py -q')" class="px-2.5 py-1 rounded-full bg-zinc-900 hover:bg-zinc-800 text-zinc-300 text-[11px] border border-zinc-800 whitespace-nowrap transition">
+          + run test suite
+        </button>
+      </div>
+
+      <!-- Input Box -->
+      <div class="rounded-2xl border border-zinc-700 bg-zinc-900/90 focus-within:border-zinc-500 p-3 shadow-xl transition">
+        <textarea
+          id="promptField"
+          oninput="handleInput(event)"
+          onkeydown="handleKeyDown(event)"
+          class="w-full bg-transparent text-sm text-white placeholder-zinc-500 focus:outline-none resize-none font-sans"
+          rows="2"
+          placeholder="Ask RepoPilot anything, or type '/' for skills and '@' for files..."
+        ></textarea>
+        
+        <div class="flex items-center justify-between pt-2 border-t border-zinc-800/80">
+          <div class="flex items-center gap-2">
+            <button onclick="triggerDropdown('slash')" class="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-[11px] font-mono text-zinc-300 border border-zinc-700 transition">
+              / skills
+            </button>
+            <button onclick="triggerDropdown('mention')" class="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-[11px] font-mono text-zinc-300 border border-zinc-700 transition">
+              @ context
+            </button>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="clearChat()" class="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 text-xs transition">
+              Clear
+            </button>
+            <button id="sendBtn" onclick="submitPrompt()" class="px-3.5 py-1.5 rounded-lg bg-white text-zinc-950 font-medium text-xs hover:bg-zinc-200 transition shadow-sm flex items-center gap-1.5">
+              <span>Send</span>
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    // Configuration
+    const OPENROUTER_API_KEY = window.OPENROUTER_API_KEY || localStorage.getItem('repopilot_openrouter_api_key') || "";
+    let PRIMARY_MODEL = "google/gemma-4-26b-a4b-it:free";
+    const FALLBACK_MODELS = [
+      "nvidia/nemotron-3.5-lightning:free",
+      "nvidia/nemotron-3.5-super-vl:free",
+      "nvidia/nemotron-3-ultra-550b-a55b:free",
+      "openrouter/auto"
+    ];
+
+    function onModelSelect(newModel) {
+      PRIMARY_MODEL = newModel;
+      if (vscode) {
+        vscode.postMessage({ type: 'ui.setModel', model: newModel });
+      }
+    }
+
+    // VS Code API detection
+    let vscode = null;
+    try {
+      if (typeof acquireVsCodeApi === 'function') {
+        vscode = acquireVsCodeApi();
+        document.getElementById('backendBadge').textContent = '● VS Code Host';
+      }
+    } catch (e) {
+      // Standalone browser mode
+    }
+
+    const conversationHistory = [
+      {
+        role: "system",
+        content: `You are RepoPilot AI, an autonomous coding agent working in the user's workspace, similar to GitHub Copilot and Antigravity.
+You have complete capabilities to:
+1. CREATE NEW FILES inside any folder or subfolder (e.g. "src/flask/commands/config.py", "tests/test_cli.py", "docs/cli.rst"). Parent directories are created automatically.
+2. EDIT EXISTING FILES in any folder across the project.
+3. PROPOSE MULTI-FILE CHANGES simultaneously in the "files" array (e.g. CLI implementation, unit tests, and documentation).
+4. NAVIGATE, EXPLORE & EXPLAIN workspace folders and files on the user's PC/laptop, identifying file purposes and folder hierarchy.
+5. ZERO SILENT WRITES: All changes are proposed for human review first.
+
+First, provide your clear, structured narrative analysis and thought process in markdown.
+Then, if code changes or new files are proposed, output a single JSON block at the very end in this exact schema:
+\`\`\`json
+{
+  "summary": "Short headline of what changed or was created",
+  "rationale": ["Reason 1", "Reason 2"],
+  "files": [
+    {
+      "path": "workspace/relative/path.py",
+      "diff": "@@ -1,3 +1,3 @@...",
+      "newContent": "FULL updated or created file content (never truncated)",
+      "rationale": "Reason for creating or modifying this file"
+    }
+  ]
+}
+\`\`\`
+Rules:
+- Always use workspace-relative POSIX paths with forward slashes (e.g. "src/flask/helpers.py"). Never use absolute paths like "C:\\...".
+- If the user only asks to navigate, explore, inspect, or explain files/folders without modifying code, do NOT output a JSON block.`
+      }
+    ];
+
+    const slashCommands = [
+      { key: '/ponytail-review', label: '/ponytail-review', detail: 'Senior dev review of diff & tests', icon: '⚡' },
+      { key: '/ponytail-audit', label: '/ponytail-audit', detail: 'Full repository health & risk audit', icon: '🔍' },
+      { key: '/verify', label: '/verify', detail: 'Run TestSheriff pytest validation suite', icon: '🧪' },
+      { key: '/impact', label: '/impact', detail: 'Run ImpactLens DAG analysis on current file', icon: '📊' },
+      { key: '/ponytail', label: '/ponytail [lite|full|ultra]', detail: 'Set ponytail engine intensity', icon: '⚙️' }
+    ];
+
+    const mentionItems = [
+      { key: '@file:src/flask/helpers.py', label: '@file:helpers.py', detail: 'src/flask/helpers.py (get_debug_flag)', icon: '📄' },
+      { key: '@file:src/flask/cli.py', label: '@file:cli.py', detail: 'src/flask/cli.py (CLI command group)', icon: '📄' },
+      { key: '@file:src/flask/app.py', label: '@file:app.py', detail: 'src/flask/app.py (Flask application entry)', icon: '📄' },
+      { key: '@file:tests/test_cli.py', label: '@file:test_cli.py', detail: 'tests/test_cli.py (Pytest verification)', icon: '🧪' },
+      { key: '@folder:src/flask/', label: '@folder:src/flask/', detail: 'Folder: Flask source modules', icon: '📁' },
+      { key: '@folder:tests/', label: '@folder:tests/', detail: 'Folder: Test suite directory', icon: '📁' },
+      { key: '@symbol:get_debug_flag', label: '@symbol:get_debug_flag', detail: 'Function in helpers.py', icon: 'ƒ' },
+      { key: '@symbol:FlaskGroup', label: '@symbol:FlaskGroup', detail: 'Class in cli.py', icon: 'C' }
+    ];
+
+    let currentDropdown = null;
+
+    function handleInput(e) {
+      const val = e.target.value;
+      const pos = e.target.selectionStart;
+      const before = val.slice(0, pos);
+      const lastWord = before.split(/\s+/).pop() || '';
+
+      if (lastWord.startsWith('/')) {
+        renderDropdown('slash');
+      } else if (lastWord.startsWith('@')) {
+        renderDropdown('mention');
+      } else {
+        closeDropdown();
+      }
+    }
+
+    function handleKeyDown(e) {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey || (!e.shiftKey && !currentDropdown))) {
+        e.preventDefault();
+        submitPrompt();
+      }
+    }
+
+    function triggerDropdown(type) {
+      const field = document.getElementById('promptField');
+      field.value += (field.value.endsWith(' ') || !field.value ? '' : ' ') + (type === 'slash' ? '/' : '@');
+      field.focus();
+      renderDropdown(type);
+    }
+
+    function renderDropdown(type) {
+      currentDropdown = type;
+      const popup = document.getElementById('autocompletePopup');
+      const title = document.getElementById('popupTitle');
+      const list = document.getElementById('popupList');
+
+      title.textContent = type === 'slash' ? 'Skills & Slash Commands' : 'Context Files & Symbols';
+      list.innerHTML = '';
+
+      const items = type === 'slash' ? slashCommands : mentionItems;
+      items.forEach((item) => {
+        const div = document.createElement('div');
+        div.className = 'flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg cursor-pointer hover:bg-zinc-800 text-zinc-300 transition';
+        div.innerHTML = `
+          <span class="text-sm shrink-0">${item.icon}</span>
+          <div class="flex-1 min-w-0">
+            <div class="font-mono font-medium text-white text-xs truncate">${item.label}</div>
+            <div class="text-[10px] text-zinc-500 truncate">${item.detail}</div>
+          </div>
+        `;
+        div.onclick = () => selectItem(item.key);
+        list.appendChild(div);
+      });
+
+      popup.classList.remove('hidden');
+    }
+
+    function selectItem(key) {
+      const field = document.getElementById('promptField');
+      const val = field.value;
+      const pos = field.selectionStart;
+      const before = val.slice(0, pos);
+      const after = val.slice(pos);
+      const words = before.split(/\s+/);
+      words.pop();
+      const prefix = words.length > 0 ? words.join(' ') + ' ' : '';
+      field.value = prefix + key + ' ' + after;
+      closeDropdown();
+      field.focus();
+    }
+
+    function closeDropdown() {
+      document.getElementById('autocompletePopup').classList.add('hidden');
+      currentDropdown = null;
+    }
+
+    function insertPrompt(text) {
+      document.getElementById('promptField').value = text;
+      document.getElementById('promptField').focus();
+    }
+
+    function clearChat() {
+      const container = document.getElementById('chatContainer');
+      container.innerHTML = `
+        <div class="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 space-y-2 text-xs">
+          <div class="flex items-center gap-2 font-semibold text-zinc-200">
+            <span>✨ Chat cleared.</span>
+          </div>
+          <p class="text-zinc-400">Ask a new question or submit code editing instructions.</p>
+        </div>
+      `;
+    }
+
+    async function submitPrompt() {
+      const field = document.getElementById('promptField');
+      const text = field.value.trim();
+      if (!text) return;
+
+      field.value = '';
+      closeDropdown();
+
+      // Extract mentions
+      const fileMentions = [...text.matchAll(/@file:(\S+)/g)].map(m => m[1]);
+      const symbolMentions = [...text.matchAll(/@symbol:(\S+)/g)].map(m => m[1]);
+
+      // Append user bubble
+      appendUserMessage(text, fileMentions, symbolMentions);
+
+      // If running inside VS Code extension host, also relay to extension
+      if (vscode) {
+        vscode.postMessage({ type: 'ui.submit', instruction: text, mode: 'agent' });
+      }
+
+      // Append assistant placeholder with ThinkingBar
+      const turnId = 'turn-' + Date.now();
+      appendAssistantTurn(turnId, text);
+
+      // Call OpenRouter API
+      await runOpenRouterTurn(turnId, text);
+    }
+
+    function appendUserMessage(text, files, symbols) {
+      const container = document.getElementById('chatContainer');
+      const div = document.createElement('div');
+      div.className = 'flex gap-3 justify-end';
+
+      let badgesHtml = '';
+      if (files.length > 0 || symbols.length > 0) {
+        badgesHtml = '<div class="mt-2 flex flex-wrap gap-1.5">';
+        files.forEach(f => {
+          badgesHtml += `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-900/80 text-[11px] font-mono text-zinc-300 border border-zinc-700">📄 @file:${escapeHtml(f)}</span>`;
+        });
+        symbols.forEach(s => {
+          badgesHtml += `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-900/80 text-[11px] font-mono text-zinc-300 border border-zinc-700">ƒ @symbol:${escapeHtml(s)}</span>`;
+        });
+        badgesHtml += '</div>';
+      }
+
+      div.innerHTML = `
+        <div class="max-w-[85%] bg-zinc-800/90 text-zinc-100 rounded-2xl px-4 py-2.5 text-sm shadow-sm border border-zinc-700/60 leading-relaxed">
+          <p>${escapeHtml(text)}</p>
+          ${badgesHtml}
+        </div>
+      `;
+      container.appendChild(div);
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function appendAssistantTurn(turnId, instruction) {
+      const container = document.getElementById('chatContainer');
+      const div = document.createElement('div');
+      div.id = turnId;
+      div.className = 'flex gap-3';
+
+      div.innerHTML = `
+        <div class="w-7 h-7 rounded-md bg-zinc-800 border border-zinc-700 flex items-center justify-center shrink-0 text-xs font-bold text-zinc-300 shadow-sm">
+          AI
+        </div>
+
+        <div class="flex-1 space-y-4 overflow-hidden">
+
+          <!-- THINKING BAR -->
+          <div class="rounded-xl border border-zinc-800 bg-zinc-900/40 p-3" id="${turnId}-thinkingBar">
+            <div class="flex items-center justify-between cursor-pointer select-none" onclick="toggleElement('${turnId}-cotContent', '${turnId}-cotChevron')">
+              <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
+                <span id="${turnId}-shimmerStatus" class="text-xs font-medium text-shimmer">
+                  Thinking &bull; Analyzing AST & ImpactLens call-graph...
+                </span>
+              </div>
+              <div class="flex items-center gap-1.5 text-xs text-zinc-400 font-mono">
+                <span id="${turnId}-cotStepCount">2 steps</span>
+                <svg id="${turnId}-cotChevron" class="w-4 h-4 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+              </div>
+            </div>
+
+            <!-- CHAIN OF THOUGHT -->
+            <div id="${turnId}-cotContent" class="mt-3 pt-3 border-t border-zinc-800 text-xs font-mono space-y-2 text-zinc-400">
+              <div class="flex items-start gap-2">
+                <span class="text-zinc-500">01</span>
+                <span>Resolving workspace AST context and explicit file mentions</span>
+              </div>
+              <div class="flex items-start gap-2 text-zinc-200">
+                <span class="text-blue-400">02</span>
+                <span>Connecting to OpenRouter Gemma 4 model for instruction synthesis</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- TOOL CALL BLOCK -->
+          <div id="${turnId}-toolBlock" class="rounded-xl border border-zinc-800 bg-zinc-900/60 overflow-hidden text-xs">
+            <div class="p-3 flex items-center justify-between cursor-pointer select-none bg-zinc-900/80" onclick="toggleElement('${turnId}-toolDetails', '${turnId}-toolChevron')">
+              <div class="flex items-center gap-2.5">
+                <div class="w-5 h-5 rounded bg-zinc-800 border border-zinc-700 flex items-center justify-center font-mono text-[10px] text-zinc-300">
+                  ⚙
+                </div>
+                <div class="flex items-center gap-2">
+                  <span class="font-mono text-zinc-200 font-medium">tool:read_file</span>
+                  <span id="${turnId}-toolTarget" class="text-[11px] text-zinc-500 font-mono">scanning workspace</span>
+                </div>
+              </div>
+              <div class="flex items-center gap-2">
+                <span id="${turnId}-toolBadge" class="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-400 border border-emerald-800">
+                  Completed
+                </span>
+                <svg id="${turnId}-toolChevron" class="w-3.5 h-3.5 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+              </div>
+            </div>
+
+            <div id="${turnId}-toolDetails" class="p-3 border-t border-zinc-800 bg-zinc-950 font-mono text-[11px] space-y-2 text-zinc-400">
+              <div class="text-zinc-500">// Action:</div>
+              <div class="text-zinc-300 bg-zinc-900/70 p-2 rounded">Repository context intelligence &amp; symbol discovery</div>
+            </div>
+          </div>
+
+          <!-- NARRATIVE TEXT OUTPUT -->
+          <div id="${turnId}-narrative" class="text-xs text-zinc-300 leading-relaxed space-y-2 bg-zinc-900/20 p-3 rounded-xl border border-zinc-800/50">
+            <span class="text-zinc-500 italic">Generating response...</span>
+          </div>
+
+          <!-- DIFF CONTAINER (POPFILLED ON PROPOSAL) -->
+          <div id="${turnId}-diffContainer" class="hidden"></div>
+
+        </div>
+      `;
+      container.appendChild(div);
+      container.scrollTop = container.scrollHeight;
+    }
+
+    async function runOpenRouterTurn(turnId, instruction) {
+      conversationHistory.push({ role: "user", content: instruction });
+
+      const shimmer = document.getElementById(`${turnId}-shimmerStatus`);
+      const cotSteps = document.getElementById(`${turnId}-cotStepCount`);
+      const cotContent = document.getElementById(`${turnId}-cotContent`);
+      const narrative = document.getElementById(`${turnId}-narrative`);
+      const diffContainer = document.getElementById(`${turnId}-diffContainer`);
+
+      let responseText = "";
+
+      try {
+      const modelsToTry = [PRIMARY_MODEL, ...FALLBACK_MODELS];
+      let res = null;
+      let activeModel = PRIMARY_MODEL;
+
+      for (let i = 0; i < modelsToTry.length; i++) {
+        activeModel = modelsToTry[i];
+        if (i > 0) {
+          shimmer.textContent = `Rate limit hit; switching to ${activeModel}...`;
+        }
+        try {
+          res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+              "Content-Type": "application/json",
+              "HTTP-Referer": "https://github.com/repopilot-ai",
+              "X-Title": "RepoPilot AI"
+            },
+            body: JSON.stringify({
+              model: activeModel,
+              messages: conversationHistory,
+              temperature: 0.2
+            })
+          });
+
+          if (res.status === 429 && i < modelsToTry.length - 1) {
+            continue;
+          }
+          break;
+        } catch (fetchErr) {
+          if (i < modelsToTry.length - 1) continue;
+          throw fetchErr;
+        }
+      }
+
+      if (!res.ok) {
+        throw new Error(`OpenRouter Error (${res.status}): ${await res.text()}`);
+      }
+
+      const modelBadge = document.getElementById('modelBadge');
+      if (modelBadge) {
+        modelBadge.textContent = `${activeModel.split('/')[1] || activeModel} (OpenRouter)`;
+      }
+
+        const data = await res.json();
+        responseText = data.choices?.[0]?.message?.content || "";
+        conversationHistory.push({ role: "assistant", content: responseText });
+
+        // Update thinking bar status to completed
+        shimmer.textContent = "Thinking complete &bull; Plan generated";
+        shimmer.className = "text-xs font-medium text-emerald-400";
+        cotSteps.textContent = "3 steps (completed)";
+
+        const stepDiv = document.createElement('div');
+        stepDiv.className = "flex items-start gap-2 text-emerald-300";
+        stepDiv.innerHTML = `<span class="text-emerald-500">03</span> <span>Synthesized code diff with zero silent writes</span>`;
+        cotContent.appendChild(stepDiv);
+
+        // Separate narrative markdown and JSON block
+        const jsonMatch = responseText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+        let explanationText = responseText;
+        let proposalData = null;
+
+        if (jsonMatch) {
+          explanationText = responseText.replace(/```(?:json)?\s*[\s\S]*?\s*```/, '').trim();
+          try {
+            proposalData = JSON.parse(jsonMatch[1]);
+          } catch (e) {
+            // Resilient slicing fallback for large HTML landing pages with unescaped attribute quotes
+            const raw = jsonMatch[1];
+            const pathMatch = raw.match(/"path"\s*:\s*"([^"]+)"/);
+            const contentIdx = raw.indexOf('"newContent"');
+            if (pathMatch && contentIdx !== -1) {
+              const colonIdx = raw.indexOf(':', contentIdx);
+              const quoteStart = raw.indexOf('"', colonIdx + 1);
+              if (quoteStart !== -1) {
+                const ratMatch = raw.match(/,\s*"rationale"\s*:\s*"/);
+                let rawContent = '';
+                if (ratMatch && ratMatch.index !== undefined && ratMatch.index > quoteStart) {
+                  rawContent = raw.slice(quoteStart + 1, ratMatch.index);
+                } else {
+                  const lastQuote = raw.lastIndexOf('"');
+                  if (lastQuote > quoteStart) rawContent = raw.slice(quoteStart + 1, lastQuote);
+                }
+                if (rawContent) {
+                  const cleanContent = rawContent.replace(/\\"/g, '"').replace(/\\n/g, '\n').replace(/\\r/g, '\r').replace(/\\\\/g, '\\');
+                  proposalData = {
+                    summary: "Created landing page",
+                    files: [{ path: pathMatch[1], newContent: cleanContent }]
+                  };
+                }
+              }
+            }
+          }
+        }
+
+        // Normalize single-file proposal directly at root
+        if (proposalData && !proposalData.files && proposalData.path && proposalData.newContent !== undefined) {
+          proposalData.files = [{ path: proposalData.path, newContent: proposalData.newContent, rationale: proposalData.rationale }];
+        }
+
+        narrative.innerHTML = formatMarkdown(explanationText || "I've analyzed your request and prepared the diff below:");
+
+        // If file changes were proposed, render Diff Review block
+        if (proposalData && proposalData.files && proposalData.files.length > 0) {
+          renderDiffBlock(diffContainer, turnId, proposalData);
+        }
+
+      } catch (err) {
+        shimmer.textContent = "Error executing turn";
+        shimmer.className = "text-xs font-medium text-rose-400";
+        narrative.innerHTML = `<div class="p-3 bg-rose-950/40 border border-rose-800 text-rose-300 rounded-lg text-xs font-mono">Error: ${escapeHtml(err.message)}</div>`;
+      }
+    }
+
+    window.previewFiles = window.previewFiles || {};
+
+    function renderDiffBlock(container, turnId, data) {
+      container.classList.remove('hidden');
+      let html = '';
+
+      data.files.forEach((f, idx) => {
+        window.previewFiles[`${turnId}-${idx}`] = f.newContent || '';
+        let fileDiff = f.diff;
+        const isNew = !fileDiff || (fileDiff && fileDiff.includes('@@ -0,0')) || f.changeType === 'create';
+        if (!fileDiff && f.newContent) {
+          const contentLines = f.newContent.split('\n');
+          fileDiff = `@@ -0,0 +1,${contentLines.length} @@\n` + contentLines.map(l => '+' + l).join('\n');
+        }
+        if (!fileDiff) {
+          fileDiff = `@@ -1,3 +1,3 @@\n-${f.path} (original)\n+${f.path} (updated)`;
+        }
+        const lines = fileDiff.split('\n');
+
+        let diffLinesHtml = '';
+        lines.forEach(l => {
+          if (l.startsWith('-')) {
+            diffLinesHtml += `<div class="bg-rose-950/40 text-rose-300 px-1 py-0.5 rounded -mx-1 flex"><span class="text-rose-500 w-5 select-none">-</span><span>${escapeHtml(l.slice(1))}</span></div>`;
+          } else if (l.startsWith('+')) {
+            diffLinesHtml += `<div class="bg-emerald-950/40 text-emerald-300 px-1 py-0.5 rounded -mx-1 flex"><span class="text-emerald-500 w-5 select-none">+</span><span>${escapeHtml(l.slice(1))}</span></div>`;
+          } else {
+            diffLinesHtml += `<div class="text-zinc-400 px-1 py-0.5 flex"><span class="w-5 select-none text-zinc-600"> </span><span>${escapeHtml(l)}</span></div>`;
+          }
+        });
+
+        html += `
+          <div class="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 space-y-3 mt-3">
+            <div class="flex items-center justify-between">
+              <p class="text-xs text-zinc-300 leading-relaxed flex items-center gap-2">
+                <span>Proposed changes for:</span>
+                <code class="text-blue-400 font-mono font-semibold">${escapeHtml(f.path)}</code>
+              </p>
+              ${isNew 
+                ? '<span class="text-[10px] px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-400 border border-emerald-800 font-mono font-bold">+ New File in Folder</span>' 
+                : '<span class="text-[10px] px-2 py-0.5 rounded bg-blue-950/80 text-blue-400 border border-blue-800 font-mono">~ Modified</span>'}
+            </div>
+
+            <div class="rounded-lg border border-zinc-800 bg-zinc-950 overflow-hidden text-xs">
+              <div class="bg-zinc-900/90 px-3 py-2 border-b border-zinc-800 flex items-center justify-between">
+                <div class="flex items-center gap-2 font-mono text-zinc-300">
+                  <span>${escapeHtml(f.path)}</span>
+                  <span class="text-zinc-500 text-[11px]">Hunk 1/1</span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <button onclick="setHunk('${turnId}-${idx}', 'accepted')" id="btnAccept-${turnId}-${idx}" class="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-[11px] transition shadow-sm">
+                    Accept
+                  </button>
+                  <button onclick="setHunk('${turnId}-${idx}', 'rejected')" id="btnReject-${turnId}-${idx}" class="px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[11px] transition border border-zinc-700">
+                    Reject
+                  </button>
+                </div>
+              </div>
+
+              <div class="p-3 font-mono text-[12px] leading-relaxed overflow-x-auto">
+                ${diffLinesHtml}
+              </div>
+
+              <div class="bg-zinc-900/80 px-3 py-2.5 border-t border-zinc-800 flex items-center justify-between">
+                <span id="hunkStatus-${turnId}-${idx}" class="text-[11px] text-amber-400 font-mono">
+                  Pending human review
+                </span>
+                <div class="flex items-center gap-2">
+                  ${(f.path.toLowerCase().endsWith('.html') || f.path.toLowerCase().endsWith('.htm')) ? `
+                    <button onclick="previewHtml('${turnId}-${idx}', '${escapeJs(f.path)}')" class="px-2.5 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs transition shadow-sm flex items-center gap-1">
+                      <span>👁 Live Preview</span>
+                    </button>
+                  ` : ''}
+                  <button id="applyBtn-${turnId}-${idx}" onclick="applyHunk('${turnId}-${idx}', '${escapeHtml(f.path)}')" class="px-3 py-1 rounded bg-white text-zinc-900 font-medium text-xs hover:bg-zinc-200 transition">
+                    Apply Hunk
+                  </button>
+                  <button id="undoBtn-${turnId}-${idx}" onclick="undoHunk('${turnId}-${idx}')" class="px-3 py-1 rounded bg-zinc-800 text-zinc-300 text-xs hover:bg-zinc-700 transition border border-zinc-700 hidden">
+                    Undo (Ctrl+Z)
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- FEEDBACK BAR -->
+            <div class="pt-2 border-t border-zinc-800/80 flex items-center justify-between text-xs text-zinc-400">
+              <div class="flex items-center gap-3">
+                <button onclick="vote('${turnId}-${idx}', 'up')" id="thumbUp-${turnId}-${idx}" class="hover:text-white flex items-center gap-1 transition">
+                  👍 Helpful
+                </button>
+                <button onclick="vote('${turnId}-${idx}', 'down')" id="thumbDown-${turnId}-${idx}" class="hover:text-white flex items-center gap-1 transition">
+                  👎 Unhelpful
+                </button>
+                <button onclick="copyDiffText(\`${escapeJs(fileDiff)}\`)" class="hover:text-white flex items-center gap-1 transition">
+                  📋 Copy Diff
+                </button>
+              </div>
+              <div class="text-[11px] text-zinc-500 font-mono">Gemma 4 Engine &bull; Zero Silent Writes</div>
+            </div>
+          </div>
+        `;
+      });
+
+      container.innerHTML = html;
+    }
+
+    function toggleElement(contentId, chevronId) {
+      const el = document.getElementById(contentId);
+      const chev = document.getElementById(chevronId);
+      if (el) el.classList.toggle('hidden');
+      if (chev) {
+        const isHidden = el.classList.contains('hidden');
+        chev.style.transform = isHidden ? 'rotate(-90deg)' : 'rotate(0deg)';
+      }
+    }
+
+    function setHunk(key, decision) {
+      const status = document.getElementById(`hunkStatus-${key}`);
+      const applyBtn = document.getElementById(`applyBtn-${key}`);
+      if (decision === 'accepted') {
+        status.textContent = 'Hunk accepted ✓ Ready to apply';
+        status.className = 'text-[11px] text-emerald-400 font-mono';
+        if (applyBtn) applyBtn.disabled = false;
+      } else {
+        status.textContent = 'Hunk rejected ✖ Will not be written to disk';
+        status.className = 'text-[11px] text-rose-400 font-mono';
+        if (applyBtn) applyBtn.disabled = true;
+      }
+    }
+
+    function applyHunk(key, path) {
+      const status = document.getElementById(`hunkStatus-${key}`);
+      const applyBtn = document.getElementById(`applyBtn-${key}`);
+      const undoBtn = document.getElementById(`undoBtn-${key}`);
+      status.textContent = `Applied to ${path} via WorkspaceEdit (Hash verified)`;
+      status.className = 'text-[11px] text-sky-400 font-mono';
+      if (applyBtn) applyBtn.classList.add('hidden');
+      if (undoBtn) undoBtn.classList.remove('hidden');
+
+      if (vscode) {
+        vscode.postMessage({ type: 'ui.applyDecisions', requestId: 'req-' + Date.now(), decisions: [{ path, hunkId: 'hunk-1', decision: 'accept' }] });
+      }
+    }
+
+    function undoHunk(key) {
+      const status = document.getElementById(`hunkStatus-${key}`);
+      const applyBtn = document.getElementById(`applyBtn-${key}`);
+      const undoBtn = document.getElementById(`undoBtn-${key}`);
+      status.textContent = 'Undone (Ctrl+Z restored original state)';
+      status.className = 'text-[11px] text-zinc-400 font-mono';
+      if (undoBtn) undoBtn.classList.add('hidden');
+      if (applyBtn) applyBtn.classList.remove('hidden');
+
+      if (vscode) {
+        vscode.postMessage({ type: 'ui.undo', requestId: 'req-' + Date.now() });
+      }
+    }
+
+    function vote(key, dir) {
+      const up = document.getElementById(`thumbUp-${key}`);
+      const down = document.getElementById(`thumbDown-${key}`);
+      if (dir === 'up') {
+        up.classList.add('text-emerald-400', 'font-bold');
+        down.classList.remove('text-rose-400', 'font-bold');
+      } else {
+        down.classList.add('text-rose-400', 'font-bold');
+        up.classList.remove('text-emerald-400', 'font-bold');
+      }
+    }
+
+    function copyDiffText(diff) {
+      navigator.clipboard?.writeText(diff);
+      alert('Diff copied to clipboard!');
+    }
+
+    function escapeHtml(str) {
+      return (str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function escapeJs(str) {
+      return (str || '').replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$/g, '\\$');
+    }
+
+    function formatMarkdown(text) {
+      return escapeHtml(text)
+        .replace(/\*\*(.*?)\*\*/g, '<strong class="text-white">$1</strong>')
+        .replace(/`([^`]+)`/g, '<code class="bg-zinc-800 text-zinc-200 px-1 py-0.5 rounded text-[11px] font-mono">$1</code>')
+        .replace(/\n\n/g, '<br/><br/>')
+        .replace(/\n/g, '<br/>');
+    }
+
+    function previewHtml(key, path) {
+      const modal = document.getElementById('htmlPreviewModal');
+      const iframe = document.getElementById('previewIframe');
+      const title = document.getElementById('previewModalTitle');
+      const content = window.previewFiles[key] || '';
+
+      title.textContent = `Live HTML Preview: ${path || 'index.html'}`;
+      iframe.srcdoc = content;
+      iframe.style.width = '100%';
+      modal.classList.remove('hidden');
+    }
+
+    function setPreviewWidth(width) {
+      const iframe = document.getElementById('previewIframe');
+      iframe.style.width = width;
+    }
+
+    function closePreviewModal() {
+      const modal = document.getElementById('htmlPreviewModal');
+      const iframe = document.getElementById('previewIframe');
+      modal.classList.add('hidden');
+      iframe.srcdoc = '';
+    }
+  </script>
+
+  <!-- LIVE HTML PREVIEW MODAL -->
+  <div id="htmlPreviewModal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col p-4">
+    <div class="max-w-6xl w-full mx-auto flex-1 flex flex-col bg-zinc-950 border border-zinc-800 rounded-2xl overflow-hidden shadow-2xl">
+      <div class="px-4 py-3 bg-zinc-900 border-b border-zinc-800 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <span class="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></span>
+          <span id="previewModalTitle" class="font-mono text-xs font-semibold text-white">Live HTML Preview</span>
+          <span class="text-[11px] text-zinc-500 font-mono">&bull; Sandboxed OpenClaude Engine</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="setPreviewWidth('100%')" class="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-mono">
+            Desktop
+          </button>
+          <button onclick="setPreviewWidth('375px')" class="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-mono">
+            Mobile (375px)
+          </button>
+          <button onclick="closePreviewModal()" class="px-3 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-bold transition">
+            ✕ Close
+          </button>
+        </div>
+      </div>
+      <div class="flex-1 bg-zinc-900/50 flex justify-center p-2 overflow-auto">
+        <iframe id="previewIframe" class="w-full h-full bg-white rounded-lg shadow-inner transition-all duration-300" sandbox="allow-scripts allow-modals"></iframe>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

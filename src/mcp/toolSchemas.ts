@@ -4,6 +4,16 @@ import { z } from 'zod';
 
 const relPath = z.string().min(1, 'path is required');
 
+export const ListDirectorySchema = z.object({
+  path: relPath.optional(),
+}).strict();
+
+export const FindFilesSchema = z.object({
+  pattern: z.string().min(1, 'pattern is required'),
+  path: relPath.optional(),
+  limit: z.number().int().positive().max(1000).optional(),
+}).strict();
+
 /** propose_edit: diff-only; collected for the user's hunk review, never written. */
 export const ProposeEditSchema = z.object({
   path: relPath,

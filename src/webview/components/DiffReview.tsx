@@ -81,6 +81,16 @@ export const DiffReview: React.FC<DiffReviewProps> = ({
               <span className="font-mono font-semibold" style={{ color: 'var(--vscode-editor-foreground, #1f2328)' }}>
                 {file.path}
               </span>
+              {file.changeType === 'create' && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300 font-mono font-bold">
+                  + New File
+                </span>
+              )}
+              {file.changeType === 'delete' && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-800 border border-red-300 font-mono font-bold">
+                  - Deleted
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-2">
               {onOpenDiff && (
