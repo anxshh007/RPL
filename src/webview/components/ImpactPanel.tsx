@@ -29,26 +29,26 @@ export interface ImpactPanelProps {
 export function getRiskColors(risk?: RiskLevel): { bg: string; border: string; text: string } {
   switch (risk) {
     case 'high':
-      return { bg: '#ffebe9', border: '#ff8182', text: '#cf222e' };
+      return { bg: 'var(--rp-risk-high-bg, #ffebe9)', border: 'var(--rp-risk-high-border, #ff8182)', text: 'var(--rp-risk-high-text, #cf222e)' };
     case 'medium':
-      return { bg: '#fff8c5', border: '#d4a72c', text: '#9a6700' };
+      return { bg: 'var(--rp-risk-medium-bg, #fff8c5)', border: 'var(--rp-risk-medium-border, #d4a72c)', text: 'var(--rp-risk-medium-text, #9a6700)' };
     case 'low':
-      return { bg: '#ddf4ff', border: '#54aeff', text: '#0969da' };
+      return { bg: 'var(--rp-risk-low-bg, #ddf4ff)', border: 'var(--rp-risk-low-border, #54aeff)', text: 'var(--rp-risk-low-text, #0969da)' };
     default:
-      return { bg: '#f6f8fa', border: '#d0d7de', text: '#57606a' };
+      return { bg: 'var(--rp-risk-none-bg, #f6f8fa)', border: 'var(--rp-risk-none-border, #d0d7de)', text: 'var(--rp-risk-none-text, #57606a)' };
   }
 }
 
 export function getConfidenceBadge(confidence?: Confidence): { label: string; bg: string; text: string } {
   switch (confidence) {
     case 'high':
-      return { label: 'High Conf.', bg: '#dafbe1', text: '#1a7f37' };
+      return { label: 'High Conf.', bg: 'var(--rp-conf-high-bg, #dafbe1)', text: 'var(--rp-conf-high-text, #1a7f37)' };
     case 'medium':
-      return { label: 'Med Conf.', bg: '#fff8c5', text: '#9a6700' };
+      return { label: 'Med Conf.', bg: 'var(--rp-risk-medium-bg, #fff8c5)', text: 'var(--rp-risk-medium-text, #9a6700)' };
     case 'low':
-      return { label: 'Low Conf.', bg: '#f6f8fa', text: '#57606a' };
+      return { label: 'Low Conf.', bg: 'var(--rp-risk-none-bg, #f6f8fa)', text: 'var(--rp-risk-none-text, #57606a)' };
     default:
-      return { label: 'Unknown', bg: '#f6f8fa', text: '#57606a' };
+      return { label: 'Unknown', bg: 'var(--rp-risk-none-bg, #f6f8fa)', text: 'var(--rp-risk-none-text, #57606a)' };
   }
 }
 
@@ -81,8 +81,10 @@ export function buildImpactFlowGraph(report: ImpactReport): { nodes: Node[]; edg
     return {
       id: node.id,
       position: { x, y },
-      targetPosition: Position.Right,
-      sourcePosition: Position.Left,
+      // Dependants sit left of what they depend on, and arrows run dependant → dependency,
+      // so an arrow leaves a box on its right side and enters the next box on its left side.
+      sourcePosition: Position.Right,
+      targetPosition: Position.Left,
       data: {
         label: (
           <div className="p-1 font-mono text-left">
@@ -110,8 +112,8 @@ export function buildImpactFlowGraph(report: ImpactReport): { nodes: Node[]; edg
         ),
       },
       style: {
-        backgroundColor: isChanged ? '#fbefff' : riskColors.bg,
-        borderColor: isChanged ? '#8250df' : riskColors.border,
+        backgroundColor: isChanged ? 'var(--rp-changed-bg, #fbefff)' : riskColors.bg,
+        borderColor: isChanged ? 'var(--rp-changed-border, #8250df)' : riskColors.border,
         borderWidth: isChanged ? '2px' : '1px',
         borderRadius: '8px',
         padding: '6px 8px',
@@ -130,15 +132,15 @@ export function buildImpactFlowGraph(report: ImpactReport): { nodes: Node[]; edg
       target: edge.target,
       animated: isInferred,
       label: edge.kind,
-      labelStyle: { fill: '#57606a', fontSize: 10, fontFamily: 'monospace' },
+      labelStyle: { fill: 'var(--rp-edge, #57606a)', fontSize: 10, fontFamily: 'monospace' },
       style: {
-        stroke: isInferred ? '#9a6700' : '#57606a',
+        stroke: isInferred ? 'var(--rp-edge-inferred, #9a6700)' : 'var(--rp-edge, #57606a)',
         strokeWidth: 1.5,
         strokeDasharray: isInferred ? '5,5' : undefined,
       },
       markerEnd: {
         type: MarkerType.ArrowClosed,
-        color: isInferred ? '#9a6700' : '#57606a',
+        color: isInferred ? 'var(--rp-edge-inferred, #9a6700)' : 'var(--rp-edge, #57606a)',
       },
     };
   });

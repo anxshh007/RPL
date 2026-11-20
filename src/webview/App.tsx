@@ -17,6 +17,7 @@ import {
 import type { ChangePlan, ImpactReport, VerificationReport, RepoPilotEvent } from '../shared/contracts';
 import { isPlanApplied } from './state/bridgeState';
 import { getStatusBadge, isAgentRunning } from './state/agentStatus';
+import { deriveThinkingSteps } from './state/thinkingSteps';
 
 export const App: React.FC = () => {
   const { state, submitInstruction, cancelRequest, applyHunks, undoHunks, openDiff } = useExtensionBridge();
@@ -71,19 +72,8 @@ export const App: React.FC = () => {
     return events.filter((e): e is Extract<RepoPilotEvent, { type: 'agent.tool' }> => e.type === 'agent.tool');
   }, [events]);
 
-  const thinkingSteps: ThinkingStep[] = useMemo(() => {
-    const steps: ThinkingStep[] = [];
-    events.forEach((e, idx) => {
-      if (e.type === 'agent.status') {
-        steps.push({
-          id: `status-${idx}`,
-          label: e.message,
-          status: ['completed', 'cancelled', 'error'].includes(e.state) ? 'completed' : 'running',
-        });
-      }
-    });
-    return steps;
-  }, [events]);
+  // Earlier steps are finished; only the latest one spins, and only while the agent works.
+  const thinkingSteps: ThinkingStep[] = useMemo(() => deriveThinkingSteps(events), [events]);
 
   // Application state derived from host events; reset for every new request
   const isApplied = isPlanApplied(state);

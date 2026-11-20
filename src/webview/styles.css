@@ -281,3 +281,85 @@ html, body {
 .hover\:bg-gray-200:hover { background-color: #d0d7de; }
 .first\:pt-0:first-child { padding-top: 0; }
 .last\:pb-0:last-child { padding-bottom: 0; }
+
+/* ==========================================================================
+   Theme-aware palette
+   Colours set from TypeScript (risk, status, diff lines, graph) use these
+   variables, so the same code works in light, dark and high-contrast themes.
+   Light values are the original ones; VS Code puts `vscode-dark` or
+   `vscode-high-contrast` on the webview <body> in dark themes.
+   ========================================================================== */
+:root {
+  --rp-risk-high-bg: #ffebe9;   --rp-risk-high-border: #ff8182;   --rp-risk-high-text: #cf222e;
+  --rp-risk-medium-bg: #fff8c5; --rp-risk-medium-border: #d4a72c; --rp-risk-medium-text: #9a6700;
+  --rp-risk-low-bg: #ddf4ff;    --rp-risk-low-border: #54aeff;    --rp-risk-low-text: #0969da;
+  --rp-risk-none-bg: #f6f8fa;   --rp-risk-none-border: #d0d7de;   --rp-risk-none-text: #57606a;
+  --rp-conf-high-bg: #dafbe1;   --rp-conf-high-text: #1a7f37;
+  --rp-changed-bg: #fbefff;     --rp-changed-border: #8250df;
+  --rp-edge: #57606a;           --rp-edge-inferred: #9a6700;      --rp-graph-dot: #cbd5e1;
+  --rp-status-working-bg: #dafbe1; --rp-status-working-text: #1a7f37; --rp-status-working-border: #4ac26b;
+  --rp-status-review-bg: #fff8c5;  --rp-status-review-text: #9a6700;  --rp-status-review-border: #d4a72c;
+  --rp-status-done-bg: #ddf4ff;    --rp-status-done-text: #0969da;    --rp-status-done-border: #54aeff;
+  --rp-status-error-bg: #ffebe9;   --rp-status-error-text: #cf222e;   --rp-status-error-border: #ff8182;
+  --rp-status-idle-bg: #f6f8fa;    --rp-status-idle-text: #57606a;    --rp-status-idle-border: #d0d7de;
+  --rp-diff-add-bg: rgba(46, 160, 67, 0.15); --rp-diff-add-text: #1a7f37;
+  --rp-diff-del-bg: rgba(248, 81, 73, 0.15); --rp-diff-del-text: #cf222e;
+  --rp-verify-bg: #faf5ff;      --rp-verify-border: #e9d5ff;      --rp-verify-text: #6b21a8;
+}
+
+body.vscode-dark, body.vscode-high-contrast {
+  --rp-risk-high-bg: rgba(248, 81, 73, 0.15);   --rp-risk-high-border: #f85149;   --rp-risk-high-text: #ff7b72;
+  --rp-risk-medium-bg: rgba(187, 128, 9, 0.15); --rp-risk-medium-border: #bb8009; --rp-risk-medium-text: #e3b341;
+  --rp-risk-low-bg: rgba(56, 139, 253, 0.15);   --rp-risk-low-border: #388bfd;    --rp-risk-low-text: #79c0ff;
+  --rp-risk-none-bg: rgba(110, 118, 129, 0.15); --rp-risk-none-border: #6e7681;   --rp-risk-none-text: #9da7b3;
+  --rp-conf-high-bg: rgba(46, 160, 67, 0.15);   --rp-conf-high-text: #56d364;
+  --rp-changed-bg: rgba(163, 113, 247, 0.15);   --rp-changed-border: #a371f7;
+  --rp-edge: #9da7b3;           --rp-edge-inferred: #e3b341;      --rp-graph-dot: #3d444d;
+  --rp-status-working-bg: rgba(46, 160, 67, 0.15); --rp-status-working-text: #56d364; --rp-status-working-border: #2ea043;
+  --rp-status-review-bg: rgba(187, 128, 9, 0.15);  --rp-status-review-text: #e3b341;  --rp-status-review-border: #bb8009;
+  --rp-status-done-bg: rgba(56, 139, 253, 0.15);   --rp-status-done-text: #79c0ff;    --rp-status-done-border: #388bfd;
+  --rp-status-error-bg: rgba(248, 81, 73, 0.15);   --rp-status-error-text: #ff7b72;   --rp-status-error-border: #f85149;
+  --rp-status-idle-bg: rgba(110, 118, 129, 0.15);  --rp-status-idle-text: #9da7b3;    --rp-status-idle-border: #6e7681;
+  --rp-diff-add-text: #56d364;  --rp-diff-del-text: #ff7b72;
+  --rp-verify-bg: rgba(163, 113, 247, 0.12); --rp-verify-border: #6e40c9; --rp-verify-text: #d2a8ff;
+}
+
+/* Graph library parts (dots, controls, edge-label backgrounds) follow the theme too. */
+.react-flow__background circle { fill: var(--rp-graph-dot); }
+.react-flow__edge-textbg { fill: var(--vscode-editor-background, #ffffff); }
+
+/* Dark / high-contrast versions of the fixed light utility colours. */
+:is(body.vscode-dark, body.vscode-high-contrast) :is(.text-gray-900, .text-gray-800) { color: var(--vscode-editor-foreground, #e6edf3); }
+:is(body.vscode-dark, body.vscode-high-contrast) :is(.text-gray-700, .text-gray-600) { color: var(--vscode-foreground, #c9d1d9); }
+:is(body.vscode-dark, body.vscode-high-contrast) :is(.text-gray-500, .text-gray-400) { color: var(--vscode-descriptionForeground, #9da7b3); }
+:is(body.vscode-dark, body.vscode-high-contrast) :is(.text-red-600, .text-red-700, .text-red-800) { color: #ff7b72; }
+:is(body.vscode-dark, body.vscode-high-contrast) :is(.text-amber-500, .text-amber-600, .text-amber-700, .text-amber-800) { color: #e3b341; }
+:is(body.vscode-dark, body.vscode-high-contrast) :is(.text-emerald-500, .text-emerald-600, .text-emerald-700, .text-emerald-800) { color: #56d364; }
+:is(body.vscode-dark, body.vscode-high-contrast) :is(.text-blue-500, .text-blue-600, .text-blue-700, .text-blue-800) { color: #79c0ff; }
+:is(body.vscode-dark, body.vscode-high-contrast) :is(.text-purple-500, .text-purple-600, .text-purple-700) { color: #d2a8ff; }
+:is(body.vscode-dark, body.vscode-high-contrast) .text-indigo-500 { color: #a5b4fc; }
+:is(body.vscode-dark, body.vscode-high-contrast) :is(.bg-white, .bg-white\/90) { background-color: var(--vscode-editor-background, #1e1e1e); }
+:is(body.vscode-dark, body.vscode-high-contrast) .bg-gray-50 { background-color: var(--vscode-sideBar-background, rgba(255, 255, 255, 0.04)); }
+:is(body.vscode-dark, body.vscode-high-contrast) .bg-gray-100 { background-color: rgba(255, 255, 255, 0.08); }
+:is(body.vscode-dark, body.vscode-high-contrast) .bg-gray-300 { background-color: var(--vscode-panel-border, #3d444d); }
+:is(body.vscode-dark, body.vscode-high-contrast) .bg-red-50 { background-color: rgba(248, 81, 73, 0.15); }
+:is(body.vscode-dark, body.vscode-high-contrast) .bg-amber-50 { background-color: rgba(187, 128, 9, 0.15); }
+:is(body.vscode-dark, body.vscode-high-contrast) .bg-amber-100 { background-color: rgba(187, 128, 9, 0.3); }
+:is(body.vscode-dark, body.vscode-high-contrast) .bg-blue-50 { background-color: rgba(56, 139, 253, 0.15); }
+:is(body.vscode-dark, body.vscode-high-contrast) .bg-emerald-50 { background-color: rgba(46, 160, 67, 0.15); }
+:is(body.vscode-dark, body.vscode-high-contrast) .bg-purple-50 { background-color: rgba(163, 113, 247, 0.15); }
+:is(body.vscode-dark, body.vscode-high-contrast) :is(.border-gray-200, .border-gray-300) { border-color: var(--vscode-panel-border, #3d444d); }
+:is(body.vscode-dark, body.vscode-high-contrast) :is(.border-red-200, .border-red-300, .border-red-400) { border-color: #f85149; }
+:is(body.vscode-dark, body.vscode-high-contrast) :is(.border-amber-200, .border-amber-300) { border-color: #bb8009; }
+:is(body.vscode-dark, body.vscode-high-contrast) :is(.border-emerald-200, .border-emerald-300) { border-color: #2ea043; }
+:is(body.vscode-dark, body.vscode-high-contrast) :is(.border-blue-200, .border-blue-300) { border-color: #388bfd; }
+:is(body.vscode-dark, body.vscode-high-contrast) .border-purple-200 { border-color: #a371f7; }
+:is(body.vscode-dark, body.vscode-high-contrast) .hover\:bg-gray-50:hover,
+:is(body.vscode-dark, body.vscode-high-contrast) .hover\:bg-gray-100:hover { background-color: rgba(255, 255, 255, 0.06); }
+:is(body.vscode-dark, body.vscode-high-contrast) .hover\:bg-gray-200:hover { background-color: rgba(255, 255, 255, 0.12); }
+:is(body.vscode-dark, body.vscode-high-contrast) .react-flow__controls-button {
+  background: var(--vscode-editor-background, #1e1e1e);
+  color: var(--vscode-editor-foreground, #e6edf3);
+  fill: var(--vscode-editor-foreground, #e6edf3);
+  border-bottom-color: var(--vscode-panel-border, #3d444d);
+}
